@@ -1,4 +1,5 @@
-import java.net.ServerSocket;
+﻿import java.net.ServerSocket;
+import java.util.Scanner
 
 fun main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -12,8 +13,17 @@ fun main() {
 
     while (true) { // keep server running
         serverSocket.accept().use { client ->
+            val input = Scanner(client.getInputStream())
             val outputStream = client.getOutputStream()
-            outputStream.write("HTTP/1.1 200 OK\r\n\r\n".toByteArray())
+
+            val startLine = input.nextLine()
+            val response =
+                if (startLine == "GET / HTTP/1.1") {
+                    "HTTP/1.1 200 OK\r\n\r\n"
+                } else {
+                    "HTTP/1.1 404 Not Found\r\n\r\n"
+                }
+            outputStream.write(response.toByteArray())
             outputStream.flush()
         }
     }
