@@ -11,10 +11,10 @@ fun main() {
     serverSocket.reuseAddress = true
 
     while (true) { // keep server running
-        val client = serverSocket.accept() // Wait for connection from a client.
-        val outputStream = client.getOutputStream()
-        outputStream.write("HTTP/1.1 200 OK\r\n\r\n".toByteArray())
-        outputStream.flush()
-        client.close()
+        serverSocket.accept().use { client ->
+            val outputStream = client.getOutputStream()
+            outputStream.write("HTTP/1.1 200 OK\r\n\r\n".toByteArray())
+            outputStream.flush()
+        }
     }
 }
