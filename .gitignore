@@ -151,3 +151,8 @@ local.properties
 
 # Google/Firebase secrets
 google-services.json
+
+.idea/
+gradle/wrapper/
+gradlew
+gradlew.bat
