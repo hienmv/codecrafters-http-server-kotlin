@@ -1,4 +1,5 @@
 ﻿import common.HttpContentType
+import httpRequest.HttpMethod
 import httpRequest.HttpRequest
 import httpResponse.HttpResponse
 import httpResponse.HttpStatus
@@ -27,37 +28,62 @@ fun main(args: Array<String>) {
 fun handle(client: Socket, directoryPath: String) {
     val outputStream = client.getOutputStream()
     val request = HttpRequest.parse(client.getInputStream())
-    val response = if (request?.requestTarget == "/") {
-        HttpResponse(status = HttpStatus.OK_200)
-    } else if (request?.requestTarget?.startsWith("/echo/") == true) {
-        HttpResponse(
-            status = HttpStatus.OK_200,
-            contentType = HttpContentType.TEXT,
-            content = request.requestTarget.removePrefix("/echo/")
-        )
-    } else if (request?.requestTarget == "/user-agent") {
-        HttpResponse(
-            status = HttpStatus.OK_200,
-            contentType = HttpContentType.TEXT,
-            content = request.requestHeaders["User-Agent"]
-        )
-    } else if (request?.requestTarget?.startsWith("/files") == true) {
-        val fileName = request.requestTarget.removePrefix("/files/")
-        val filePath = "$directoryPath/$fileName"
-        try {
-            val content = File(filePath).readText()
-            HttpResponse(
-                status = HttpStatus.OK_200,
-                contentType = HttpContentType.OCTET_STREAM,
-                content = content
-            )
-        } catch (e: IOException) {
-            println(e.message)
-            HttpResponse(status = HttpStatus.NOTFOUND_404)
-        }
+    val response = if (request?.target == "/") {
+        getRoot()
+    } else if (request?.target?.startsWith("/echo/") == true) {
+        getEcho(request)
+    } else if (request?.target == "/user-agent") {
+        getUserAgent(request)
+    } else if (request?.method == HttpMethod.GET && request.target.startsWith("/files")) {
+        getFile(request, directoryPath)
+    } else if (request?.method == HttpMethod.POST && request.target.startsWith("/files")) {
+        appendFile(request, directoryPath)
     } else {
         HttpResponse(status = HttpStatus.NOTFOUND_404)
     }
     outputStream.write(response.toString().toByteArray())
     outputStream.flush()
+}
+
+fun getRoot() = HttpResponse(status = HttpStatus.OK_200)
+
+fun getEcho(request: HttpRequest) = HttpResponse(
+    status = HttpStatus.OK_200,
+    contentType = HttpContentType.TEXT,
+    content = request.target.removePrefix("/echo/")
+)
+
+fun getUserAgent(request: HttpRequest) = HttpResponse(
+    status = HttpStatus.OK_200,
+    contentType = HttpContentType.TEXT,
+    content = request.headers["User-Agent"]
+)
+
+fun getFile(request: HttpRequest, directoryPath: String): HttpResponse {
+    val fileName = request.target.removePrefix("/files/")
+    val filePath = "$directoryPath/$fileName"
+    return try {
+        val content = File(filePath).readText()
+        HttpResponse(
+            status = HttpStatus.OK_200,
+            contentType = HttpContentType.OCTET_STREAM,
+            content = content
+        )
+    } catch (e: IOException) {
+        println(e.message)
+        HttpResponse(status = HttpStatus.NOTFOUND_404)
+    }
+}
+
+fun appendFile(request: HttpRequest, directoryPath: String): HttpResponse {
+    val fileName = request.target.removePrefix("/files/")
+    val filePath = "$directoryPath/$fileName"
+    return try {
+        val file = File(filePath)
+        file.appendText(request.body)
+        HttpResponse(status = HttpStatus.CREATED)
+    } catch (e: IOException) {
+        println(e.message)
+        HttpResponse(status = HttpStatus.BAD_REQUEST)
+    }
 }

@@ -5,53 +5,48 @@ import java.io.InputStream
 
 data class HttpRequest(
     val method: HttpMethod,
-    val requestTarget: String,
+    val target: String,
     val protocol: HttpProtocol,
-    val requestHeaders: Map<String, String> = emptyMap(),
+    val headers: Map<String, String> = emptyMap(),
     val body: String,
 ) {
     companion object {
         fun parse(inputStream: InputStream): HttpRequest? {
             val reader = inputStream.bufferedReader()
             return try {
+                // request line
                 val requestLine = reader.readLine() ?: return null
+                val requestLineParts = requestLine.split(" ", limit = 3)
+                val (method, target, protocol) = requestLineParts
 
+                // headers
                 val headerLines = mutableListOf<String>()
                 var line: String?
                 while (reader.readLine().also { line = it } != null && !line.isNullOrEmpty()) {
                     headerLines.add(line)
                 }
-                parse(
-                    requestLine = requestLine,
-                    headerLines = headerLines,
-                    bodyLine = "" // TODO later,
-                )
-            } catch (e: Exception) {
-                null
-            }
-        }
-
-        fun parse(requestLine: String, headerLines: List<String>, bodyLine: String): HttpRequest? {
-            return try {
-                val requestLineParts = requestLine.split(" ")
-                if (requestLineParts.size != 3) {
-                    return null
-                }
-                val (method, requestTarget, protocol) = requestLineParts
-
-                val requestHeaders = headerLines.associate { headerLine ->
+                val headers = headerLines.associate { headerLine ->
                     val (key, value) = headerLine.split(":", limit = 2)
                     key.trim() to value.trim()
                 }
 
+                // body
+                val contentLength = headers["Content-Length"]?.toInt() ?: 0
+                val body = if (contentLength > 0) {
+                    val charBuffer = CharArray(contentLength)
+                    reader.read(charBuffer, 0, contentLength)
+                    String(charBuffer)
+                } else ""
+
                 HttpRequest(
                     method = HttpMethod.valueOf(method),
-                    requestTarget = requestTarget,
+                    target = target,
                     protocol = HttpProtocol.fromValue(protocol),
-                    requestHeaders = requestHeaders,
-                    body = bodyLine
+                    headers = headers,
+                    body = body
                 )
             } catch (e: Exception) {
+                println(e.message)
                 null
             }
         }
