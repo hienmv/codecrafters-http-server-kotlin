@@ -42,7 +42,7 @@ fun handle(client: Socket, directoryPath: String) {
     } else {
         HttpResponse(status = HttpStatus.NOTFOUND_404)
     }
-    outputStream.write(response.toString().toByteArray())
+    outputStream.write(response.toBytes())
     outputStream.flush()
 }
 
@@ -50,6 +50,7 @@ fun getRoot() = HttpResponse(status = HttpStatus.OK_200)
 
 fun getEcho(request: HttpRequest): HttpResponse {
     val acceptEncodings = request.headers["Accept-Encoding"]
+    val responseContent = request.target.removePrefix("/echo/")
     return if (acceptEncodings != null) {
         val acceptEncodingSet = acceptEncodings.split(",").map { it.trim() }.toSet()
         val supportedEncoding = Constants.SUPPORTED_ENCODINGS.firstOrNull { acceptEncodingSet.contains(it) }
@@ -57,12 +58,13 @@ fun getEcho(request: HttpRequest): HttpResponse {
             status = HttpStatus.OK_200,
             contentType = HttpContentType.TEXT,
             contentEncoding = supportedEncoding,
+            content = responseContent
         )
     } else {
         HttpResponse(
             status = HttpStatus.OK_200,
             contentType = HttpContentType.TEXT,
-            body = request.target.removePrefix("/echo/")
+            content = responseContent
         )
     }
 }
@@ -70,7 +72,7 @@ fun getEcho(request: HttpRequest): HttpResponse {
 fun getUserAgent(request: HttpRequest) = HttpResponse(
     status = HttpStatus.OK_200,
     contentType = HttpContentType.TEXT,
-    body = request.headers["User-Agent"]
+    content = request.headers["User-Agent"]
 )
 
 fun getFile(request: HttpRequest, directoryPath: String): HttpResponse {
@@ -81,7 +83,7 @@ fun getFile(request: HttpRequest, directoryPath: String): HttpResponse {
         HttpResponse(
             status = HttpStatus.OK_200,
             contentType = HttpContentType.OCTET_STREAM,
-            body = content
+            content = content
         )
     } catch (e: IOException) {
         println(e.message)
