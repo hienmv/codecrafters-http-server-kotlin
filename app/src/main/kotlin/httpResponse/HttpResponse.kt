@@ -1,7 +1,6 @@
 package httpResponse
 
 import common.Constants
-import common.HttpContentType
 import common.HttpProtocol
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -10,15 +9,14 @@ import java.util.zip.GZIPOutputStream
 data class HttpResponse(
     val status: HttpStatus,
     val protocol: HttpProtocol = HttpProtocol.HTTP11,
-    val contentType: HttpContentType? = null,
-    val contentEncoding: String? = null,
+    val headers: Map<String, String> = emptyMap(),
     val content: String? = null
 ) {
     fun toBytes(): ByteArray {
         // HTTP Body is binary data
         val bodyBytes = when {
             content == null -> byteArrayOf()
-            contentEncoding == Constants.GZIP -> {
+            headers["Content-Encoding"] == Constants.GZIP -> {
                 val byteArrayOutputStream = ByteArrayOutputStream()
                 GZIPOutputStream(byteArrayOutputStream).bufferedWriter(StandardCharsets.UTF_8).use {
                     it.write(content)
@@ -32,12 +30,7 @@ data class HttpResponse(
             append("${protocol.value} ${status.code} ${status.message}${Constants.CRLF}")
 
             // headers
-            contentType?.let {
-                append("Content-Type: ${contentType.value}${Constants.CRLF}")
-            }
-            contentEncoding?.let {
-                append("Content-Encoding: $it${Constants.CRLF}")
-            }
+            headers.forEach { (key, value) -> append("$key: $value${Constants.CRLF}") }
             append("Content-Length: ${bodyBytes.size}${Constants.CRLF}")
 
             // separator between Headers and body
