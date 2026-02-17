@@ -34,11 +34,6 @@ fun handle(client: Socket, directoryPath: String) {
         // keep persistent HTTP Connections: the same TCP Connection can be reused for multiple requests
         while (!client.isClosed && !client.isInputShutdown) {
             val request = HttpRequest.parse(inputStream) ?: break
-            // client explicitly asks to close
-            if (request.headers["Connection"]?.lowercase() == "close") {
-                break
-            }
-
             val response = when {
                 request.target == "/" -> getRoot()
                 request.target.startsWith("/echo/") -> getEcho(request)
@@ -54,6 +49,11 @@ fun handle(client: Socket, directoryPath: String) {
             }
             outputStream.write(response.toBytes())
             outputStream.flush()
+
+            // client explicitly asks to close
+            if (request.headers["Connection"]?.lowercase() == "close") {
+                break
+            }
         }
     } catch (e: Exception) {
         println(e.printStackTrace())
