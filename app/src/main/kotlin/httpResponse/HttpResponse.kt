@@ -18,7 +18,7 @@ data class HttpResponse(
         // HTTP Body is binary data
         val bodyBytes = when {
             content == null -> byteArrayOf()
-            contentEncoding == "gzip" -> {
+            contentEncoding == Constants.GZIP -> {
                 val byteArrayOutputStream = ByteArrayOutputStream()
                 GZIPOutputStream(byteArrayOutputStream).bufferedWriter(StandardCharsets.UTF_8).use {
                     it.write(content)

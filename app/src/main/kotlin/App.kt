@@ -27,23 +27,37 @@ fun main(args: Array<String>) {
 }
 
 fun handle(client: Socket, directoryPath: String) {
+    val inputStream = client.getInputStream()
     val outputStream = client.getOutputStream()
-    val request = HttpRequest.parse(client.getInputStream())
-    val response = if (request?.target == "/") {
-        getRoot()
-    } else if (request?.target?.startsWith("/echo/") == true) {
-        getEcho(request)
-    } else if (request?.target == "/user-agent") {
-        getUserAgent(request)
-    } else if (request?.method == HttpMethod.GET && request.target.startsWith("/files")) {
-        getFile(request, directoryPath)
-    } else if (request?.method == HttpMethod.POST && request.target.startsWith("/files")) {
-        appendFile(request, directoryPath)
-    } else {
-        HttpResponse(status = HttpStatus.NOTFOUND_404)
+    try {
+        // keep the loop running as long as the socket is open and not shut down
+        // keep persistent HTTP Connections: the same TCP Connection can be reused for multiple requests
+        while (!client.isClosed && !client.isInputShutdown) {
+            val request = HttpRequest.parse(inputStream) ?: break
+            // client explicitly asks to close
+            if (request.headers["Connection"]?.lowercase() == "close") {
+                break
+            }
+
+            val response = when {
+                request.target == "/" -> getRoot()
+                request.target.startsWith("/echo/") -> getEcho(request)
+                request.target == "/user-agent" -> getUserAgent(request)
+                request.target.startsWith("/files") ->
+                    when (request.method) {
+                        HttpMethod.GET -> getFile(request, directoryPath)
+                        HttpMethod.POST -> appendFile(request, directoryPath)
+                        else -> HttpResponse(status = HttpStatus.NOTFOUND_404)
+                    }
+
+                else -> HttpResponse(status = HttpStatus.NOTFOUND_404)
+            }
+            outputStream.write(response.toBytes())
+            outputStream.flush()
+        }
+    } catch (e: Exception) {
+        println(e.printStackTrace())
     }
-    outputStream.write(response.toBytes())
-    outputStream.flush()
 }
 
 fun getRoot() = HttpResponse(status = HttpStatus.OK_200)

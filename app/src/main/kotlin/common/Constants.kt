@@ -2,5 +2,6 @@ package common
 
 object Constants {
     const val CRLF = "\r\n"
-    val SUPPORTED_ENCODINGS = listOf("gzip")
+    const val GZIP = "gzip"
+    val SUPPORTED_ENCODINGS = listOf(GZIP)
 }
