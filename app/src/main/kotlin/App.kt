@@ -1,4 +1,5 @@
-﻿import common.HttpContentType
+﻿import common.Constants
+import common.HttpContentType
 import httpRequest.HttpMethod
 import httpRequest.HttpRequest
 import httpResponse.HttpResponse
@@ -48,20 +49,15 @@ fun handle(client: Socket, directoryPath: String) {
 fun getRoot() = HttpResponse(status = HttpStatus.OK_200)
 
 fun getEcho(request: HttpRequest): HttpResponse {
-    val acceptEncoding = request.headers["Accept-Encoding"]
-    return if (acceptEncoding != null) {
-        if (acceptEncoding == "gzip") { // supported encoding
-            HttpResponse(
-                status = HttpStatus.OK_200,
-                contentType = HttpContentType.TEXT,
-                contentEncoding = acceptEncoding
-            )
-        } else {
-            HttpResponse(
-                status = HttpStatus.OK_200,
-                contentType = HttpContentType.TEXT,
-            )
-        }
+    val acceptEncodings = request.headers["Accept-Encoding"]
+    return if (acceptEncodings != null) {
+        val acceptEncodingSet = acceptEncodings.split(",").map { it.trim() }.toSet()
+        val supportedEncoding = Constants.SUPPORTED_ENCODINGS.firstOrNull { acceptEncodingSet.contains(it) }
+        HttpResponse(
+            status = HttpStatus.OK_200,
+            contentType = HttpContentType.TEXT,
+            contentEncoding = supportedEncoding,
+        )
     } else {
         HttpResponse(
             status = HttpStatus.OK_200,
