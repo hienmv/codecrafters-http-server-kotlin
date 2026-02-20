@@ -6,21 +6,26 @@ import httpResponse.HttpResponse
 import httpResponse.HttpStatus
 import java.io.File
 import java.io.IOException
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 
 object Config {
-    var directoryPath = ""
+    lateinit var directoryPath: String
+        private set
+    fun initialize(directoryPath: String) {
+        check(!::directoryPath.isInitialized) { "Config can only be initialized once" }
+        this.directoryPath = directoryPath
+    }
 }
 
 fun main(args: Array<String>) {
-    Config.directoryPath = if (args.size > 1 && args[0] == "--directory") args[1] else "."
+    val directoryPath = if (args.size > 1 && args[0] == "--directory") args[1] else "."
+    Config.initialize(directoryPath)
 
-    val serverSocket = ServerSocket(4221)
-
-    // Since the tester restarts your program quite often, setting SO_REUSEADDR
-    // ensures that we don't run into 'Address already in use' errors
+    val serverSocket = ServerSocket()
     serverSocket.reuseAddress = true
+    serverSocket.bind(InetSocketAddress(4221))
 
     while (true) { // keep server running
         val client = serverSocket.accept()
@@ -85,26 +90,38 @@ fun handleRequest(request: HttpRequest): HttpResponse {
                 HttpMethod.GET -> {
                     responseHeaders.put("Content-Type", HttpContentType.OCTET_STREAM.value)
                     val fileName = request.target.removePrefix("/files/")
-                    val filePath = "${Config.directoryPath}/$fileName"
-                    try {
-                        status = HttpStatus.OK_200
-                        content = File(filePath).readText()
-                    } catch (e: IOException) {
-                        println(e.message)
-                        status = HttpStatus.NOTFOUND_404
+                    val basePath = File(Config.directoryPath).canonicalPath
+                    val filePath = File(Config.directoryPath, fileName).canonicalPath
+                    status = if (!filePath.startsWith(basePath)) {
+                        HttpStatus.NOTFOUND_404
+                    } else {
+                        try {
+                            // TODO: not for big files, we should stream the file content to the response instead of loading it all in memory
+                            content = File(filePath).readText()
+                            HttpStatus.OK_200
+                        } catch (e: IOException) {
+                            println(e.message)
+                            HttpStatus.NOTFOUND_404
+                        }
                     }
                 }
 
                 HttpMethod.POST -> {
                     val fileName = request.target.removePrefix("/files/")
-                    val filePath = "${Config.directoryPath}/$fileName"
-                    try {
-                        val file = File(filePath)
-                        file.appendText(request.body)
-                        status = HttpStatus.CREATED
-                    } catch (e: IOException) {
-                        println(e.message)
-                        status = HttpStatus.BAD_REQUEST
+                    val basePath = File(Config.directoryPath).canonicalPath
+                    val filePath = File(Config.directoryPath, fileName).canonicalPath
+                    status = if (!filePath.startsWith(basePath)) {
+                        HttpStatus.BAD_REQUEST
+                    } else {
+                        try {
+                            // TODO: not for big files, we should stream the request body to the file instead of loading it all in memory
+                            val file = File(filePath)
+                            file.appendText(request.body)
+                            HttpStatus.CREATED
+                        } catch (e: IOException) {
+                            println(e.message)
+                            HttpStatus.BAD_REQUEST
+                        }
                     }
                 }
 
