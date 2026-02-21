@@ -33,7 +33,19 @@ data class HttpRequest(
                 val contentLength = headers["Content-Length"]?.toInt() ?: 0
                 val body = if (contentLength > 0) {
                     val charBuffer = CharArray(contentLength)
-                    bufferedReader.read(charBuffer, 0, contentLength)
+                    // read() may not read the full content length in one call
+                    // (content length can be larger than the internal buffer size)
+                    // (default is 8192 chars for BufferedReader - bufferedReader.read(): up to 8192 chars per call)
+                    // so we need to loop until we read the expected content length or reach the end of stream
+                    var offset = 0
+                    while (offset < contentLength) {
+                        val n = bufferedReader.read(charBuffer, offset, contentLength - offset)
+                        // check if the end of stream is reached before reading the expected content length
+                        if (n == -1) {
+                            break
+                        }
+                        offset += n
+                    }
                     String(charBuffer)
                 } else ""
 
@@ -45,7 +57,7 @@ data class HttpRequest(
                     body = body
                 )
             } catch (e: Exception) {
-                println(e.message)
+                e.printStackTrace()
                 null
             }
         }
