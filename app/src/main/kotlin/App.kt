@@ -103,7 +103,7 @@ fun handleRequest(request: HttpRequest): HttpResponse {
                 val fileName = request.target.removePrefix("/files/")
                 val basePath = File(Config.directoryPath).canonicalPath
                 val filePath = File(Config.directoryPath, fileName).canonicalPath
-                status = if (!filePath.startsWith(basePath)) {
+                status = if (!filePath.startsWith(basePath + File.separator)) {
                     HttpStatus.NOT_FOUND_404
                 } else {
                     try {
@@ -121,7 +121,7 @@ fun handleRequest(request: HttpRequest): HttpResponse {
                 val fileName = request.target.removePrefix("/files/")
                 val basePath = File(Config.directoryPath).canonicalPath
                 val filePath = File(Config.directoryPath, fileName).canonicalPath
-                status = if (!filePath.startsWith(basePath)) {
+                status = if (!filePath.startsWith(basePath + File.separator)) {
                     HttpStatus.BAD_REQUEST_400
                 } else {
                     try {
