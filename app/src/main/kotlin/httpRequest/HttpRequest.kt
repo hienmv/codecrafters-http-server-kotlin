@@ -8,7 +8,7 @@ data class HttpRequest(
     val target: String,
     val protocol: HttpProtocol,
     val headers: Map<String, String> = emptyMap(),
-    val body: String,
+    val body: ByteArray,
 ) {
     companion object {
         fun parse(bufferedReader: BufferedReader): HttpRequest? {
@@ -29,6 +29,7 @@ data class HttpRequest(
             }
 
             // body
+            // BufferedReader uses ISO_8859_1 so each char maps 1-to-1 to a byte (0x00 - 0xFF), giving lossless binary reads
             val contentLength = headers["Content-Length"]?.toInt() ?: 0
             val body = if (contentLength > 0) {
                 val charBuffer = CharArray(contentLength)
@@ -45,8 +46,9 @@ data class HttpRequest(
                     }
                     offset += n
                 }
-                String(charBuffer)
-            } else ""
+                // ISO_8859_1: char.code == byte value (0–255), lossless conversion back to bytes
+                ByteArray(offset) { charBuffer[it].code.toByte() }
+            } else byteArrayOf()
 
             return HttpRequest(
                 method = HttpMethod.valueOf(method),

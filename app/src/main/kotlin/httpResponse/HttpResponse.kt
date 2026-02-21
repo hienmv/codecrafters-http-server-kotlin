@@ -10,20 +10,20 @@ data class HttpResponse(
     val status: HttpStatus,
     val protocol: HttpProtocol = HttpProtocol.HTTP11,
     val headers: Map<String, String> = emptyMap(),
-    val content: String? = null
+    val body: ByteArray? = null,
 ) {
     fun toBytes(): ByteArray {
         // HTTP Body is binary data
         val bodyBytes = when {
-            content == null -> byteArrayOf()
+            body == null -> byteArrayOf()
             headers["Content-Encoding"] == Constants.GZIP -> {
                 val byteArrayOutputStream = ByteArrayOutputStream()
-                GZIPOutputStream(byteArrayOutputStream).bufferedWriter(StandardCharsets.UTF_8).use {
-                    it.write(content)
+                GZIPOutputStream(byteArrayOutputStream).use {
+                    it.write(body)
                 }
                 byteArrayOutputStream.toByteArray()
             }
-            else -> content.toByteArray(StandardCharsets.UTF_8)
+            else -> body
         }
         val headerString = buildString {
             // status line

@@ -4,8 +4,10 @@ import httpRequest.HttpMethod
 import httpRequest.HttpRequest
 import httpResponse.HttpResponse
 import httpResponse.HttpStatus
+import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
+import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -41,7 +43,10 @@ fun handle(client: Socket) {
     // bufferReader will read from the socket input stream in chunks
     // and keep the remaining data in memory until the next read,
     // so we won't lose any data when parsing multiple HTTP requests from the same connection
-    val bufferedReader = client.getInputStream().bufferedReader()
+    // ISO_8859_1 maps every byte 0x00-0xFF to char 0x00-0xFF one-to-one,
+    // reference: https://cwiki.apache.org/confluence/display/TOMCAT/Character+Encoding
+    // so binary request bodies can be read losslessly through the BufferedReader
+    val bufferedReader = BufferedReader(InputStreamReader(client.getInputStream(), Charsets.ISO_8859_1))
     val outputStream = client.getOutputStream()
     try {
         // keep the loop running as long as the socket is open and not shut down
@@ -59,7 +64,13 @@ fun handle(client: Socket) {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                outputStream.write(HttpResponse(status = HttpStatus.BAD_REQUEST_400, content = "Bad Request: ${e.message}").toBytes())
+                outputStream.write(
+                    HttpResponse(
+                        status = HttpStatus.BAD_REQUEST_400,
+                        headers = mapOf("Content-Type" to HttpContentType.TEXT.value),
+                        body = "Bad Request: ${e.message}".toByteArray(Charsets.UTF_8)
+                    ).toBytes()
+                )
                 outputStream.flush()
                 break
             }
@@ -81,25 +92,24 @@ fun handleRequest(request: HttpRequest): HttpResponse {
         responseHeaders["Content-Encoding"] = supportedEncoding
     }
 
-    var content: String? = null
+    var body: ByteArray? = null
     var status: HttpStatus
     when {
         request.target == "/" -> status = HttpStatus.OK_200
         request.target.startsWith("/echo/") -> {
             responseHeaders["Content-Type"] = HttpContentType.TEXT.value
             status = HttpStatus.OK_200
-            content = request.target.removePrefix("/echo/")
+            body = request.target.removePrefix("/echo/").toByteArray(Charsets.UTF_8)
         }
 
         request.target == "/user-agent" -> {
             responseHeaders["Content-Type"] = HttpContentType.TEXT.value
             status = HttpStatus.OK_200
-            content = request.headers["User-Agent"]
+            body = request.headers["User-Agent"]?.toByteArray(Charsets.UTF_8)
         }
 
         request.target.startsWith("/files/") -> when (request.method) {
             HttpMethod.GET -> {
-                responseHeaders["Content-Type"] = HttpContentType.OCTET_STREAM.value
                 val fileName = request.target.removePrefix("/files/")
                 val basePath = File(Config.directoryPath).canonicalPath
                 val filePath = File(Config.directoryPath, fileName).canonicalPath
@@ -108,11 +118,13 @@ fun handleRequest(request: HttpRequest): HttpResponse {
                 } else {
                     try {
                         // TODO: not for big files, we should stream the file content to the response instead of loading it all in memory
-                        content = File(filePath).readText()
+                        // readBytes to handle binary data not just text files
+                        body = File(filePath).readBytes()
+                        responseHeaders["Content-Type"] = HttpContentType.OCTET_STREAM.value
                         HttpStatus.OK_200
                     } catch (e: IOException) {
                         println(e.message)
-                        HttpStatus.NOT_FOUND_404
+                        HttpStatus.BAD_REQUEST_400
                     }
                 }
             }
@@ -128,7 +140,7 @@ fun handleRequest(request: HttpRequest): HttpResponse {
                         // TODO: not for big files, we should stream the request body to the file instead of loading it all in memory
                         val file = File(filePath)
                         // NOT append, since POST semantic is to create a new resource, if the file already exists, we should overwrite it
-                        file.writeText(request.body)
+                        file.writeBytes(request.body)
                         HttpStatus.CREATED_201
                     } catch (e: IOException) {
                         println(e.message)
@@ -144,6 +156,8 @@ fun handleRequest(request: HttpRequest): HttpResponse {
     }
 
     return HttpResponse(
-        status = status, headers = responseHeaders, content = content
+        status = status,
+        headers = responseHeaders,
+        body = body
     )
 }
