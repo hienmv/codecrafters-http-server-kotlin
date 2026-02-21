@@ -1,7 +1,8 @@
 package httpRequest
 
 import common.HttpProtocol
-import java.io.BufferedReader
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 
 data class HttpRequest(
     val method: HttpMethod,
@@ -11,16 +12,39 @@ data class HttpRequest(
     val body: ByteArray,
 ) {
     companion object {
-        fun parse(bufferedReader: BufferedReader): HttpRequest? {
+        // HTTP lines are terminated by \r\n (CRLF)
+        // Returns null only if the stream ends before any byte is read (clean client disconnect)
+        private fun readLine(stream: BufferedInputStream): String? {
+            val bytes = ByteArrayOutputStream()
+            var prev = -1
+            while (true) {
+                val b = stream.read()
+                if (b == -1) {
+                    // end of stream: null if nothing was read yet, otherwise return what we have
+                    return if (bytes.size() == 0 && prev == -1) null
+                    else bytes.toString(Charsets.ISO_8859_1)
+                }
+                if (prev == '\r'.code && b == '\n'.code) {
+                    // strip the trailing \r and return the line
+                    val result = bytes.toByteArray()
+                    return String(result, 0, result.size - 1, Charsets.ISO_8859_1)
+                }
+                bytes.write(b)
+                prev = b
+            }
+        }
+
+        fun parse(stream: BufferedInputStream): HttpRequest? {
             // request line
-            val requestLine = bufferedReader.readLine() ?: return null // end of stream, no more requests to parse
+            val requestLine = readLine(stream) ?: return null
             val requestLineParts = requestLine.split(" ", limit = 3)
             val (method, target, protocol) = requestLineParts
 
             // headers
             val headerLines = mutableListOf<String>()
-            var line: String?
-            while (bufferedReader.readLine().also { line = it } != null && !line.isNullOrEmpty()) {
+            while (true) {
+                val line = readLine(stream) ?: break  // stream closed mid-headers
+                if (line.isEmpty()) break              // blank line = end of headers
                 headerLines.add(line)
             }
             val headers = headerLines.associate { headerLine ->
@@ -28,26 +52,17 @@ data class HttpRequest(
                 key.trim() to value.trim()
             }
 
-            // body
-            // BufferedReader uses ISO_8859_1 so each char maps 1-to-1 to a byte (0x00 - 0xFF), giving lossless binary reads
+            // body — read directly into ByteArray, no charset conversion needed
             val contentLength = headers["Content-Length"]?.toInt() ?: 0
             val body = if (contentLength > 0) {
-                val charBuffer = CharArray(contentLength)
-                // read() may not read the full content length in one call
-                // (content length can be larger than the internal buffer size)
-                // (default is 8192 chars for BufferedReader - bufferedReader.read(): up to 8192 chars per call)
-                // so we need to loop until we read the expected content length or reach the end of stream
+                val bodyBuffer = ByteArray(contentLength)
                 var offset = 0
                 while (offset < contentLength) {
-                    val n = bufferedReader.read(charBuffer, offset, contentLength - offset)
-                    // check if the end of stream is reached before reading the expected content length
-                    if (n == -1) {
-                        break
-                    }
+                    val n = stream.read(bodyBuffer, offset, contentLength - offset)
+                    if (n == -1) break
                     offset += n
                 }
-                // ISO_8859_1: char.code == byte value (0–255), lossless conversion back to bytes
-                ByteArray(offset) { charBuffer[it].code.toByte() }
+                bodyBuffer
             } else byteArrayOf()
 
             return HttpRequest(

@@ -4,10 +4,9 @@ import httpRequest.HttpMethod
 import httpRequest.HttpRequest
 import httpResponse.HttpResponse
 import httpResponse.HttpStatus
-import java.io.BufferedReader
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
-import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -39,21 +38,16 @@ fun main(args: Array<String>) {
 }
 
 fun handle(client: Socket) {
-    // one reader per connection to no data loss when handling persistent HTTP Connections (keep-alive)
-    // bufferReader will read from the socket input stream in chunks
-    // and keep the remaining data in memory until the next read,
-    // so we won't lose any data when parsing multiple HTTP requests from the same connection
-    // ISO_8859_1 maps every byte 0x00-0xFF to char 0x00-0xFF one-to-one,
-    // reference: https://cwiki.apache.org/confluence/display/TOMCAT/Character+Encoding
-    // so binary request bodies can be read losslessly through the BufferedReader
-    val bufferedReader = BufferedReader(InputStreamReader(client.getInputStream(), Charsets.ISO_8859_1))
+    // one stream per connection — BufferedInputStream buffers reads for efficiency
+    // and retains unread bytes across parse() calls, so keep-alive requests are handled correctly
+    val stream = BufferedInputStream(client.getInputStream())
     val outputStream = client.getOutputStream()
     try {
         // keep the loop running as long as the socket is open and not shut down
         // keep persistent HTTP Connections: the same TCP Connection can be reused for multiple requests
         while (!client.isClosed && !client.isInputShutdown) {
             try {
-                val request = HttpRequest.parse(bufferedReader) ?: break
+                val request = HttpRequest.parse(stream) ?: break
                 val response = handleRequest(request)
                 outputStream.write(response.toBytes())
                 outputStream.flush()
@@ -117,11 +111,16 @@ fun handleRequest(request: HttpRequest): HttpResponse {
                     HttpStatus.NOT_FOUND_404
                 } else {
                     try {
-                        // TODO: not for big files, we should stream the file content to the response instead of loading it all in memory
-                        // readBytes to handle binary data not just text files
-                        body = File(filePath).readBytes()
-                        responseHeaders["Content-Type"] = HttpContentType.OCTET_STREAM.value
-                        HttpStatus.OK_200
+                        val file = File(filePath)
+                        if (!file.exists()) {
+                            HttpStatus.NOT_FOUND_404
+                        } else {
+                            // TODO: not for big files, we should stream the file content to the response instead of loading it all in memory
+                            // readBytes to handle binary data not just text files
+                            body = file.readBytes()
+                            responseHeaders["Content-Type"] = HttpContentType.OCTET_STREAM.value
+                            HttpStatus.OK_200
+                        }
                     } catch (e: IOException) {
                         println(e.message)
                         HttpStatus.BAD_REQUEST_400
@@ -143,7 +142,7 @@ fun handleRequest(request: HttpRequest): HttpResponse {
                         file.writeBytes(request.body)
                         HttpStatus.CREATED_201
                     } catch (e: IOException) {
-                        println(e.message)
+                        e.printStackTrace()
                         HttpStatus.BAD_REQUEST_400
                     }
                 }
