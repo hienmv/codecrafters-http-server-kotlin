@@ -47,13 +47,20 @@ fun handle(client: Socket) {
         // keep the loop running as long as the socket is open and not shut down
         // keep persistent HTTP Connections: the same TCP Connection can be reused for multiple requests
         while (!client.isClosed && !client.isInputShutdown) {
-            val request = HttpRequest.parse(bufferedReader) ?: break
-            val response = handleRequest(request)
-            outputStream.write(response.toBytes())
-            outputStream.flush()
+            try {
+                val request = HttpRequest.parse(bufferedReader) ?: break
+                val response = handleRequest(request)
+                outputStream.write(response.toBytes())
+                outputStream.flush()
 
-            // client explicitly asks to close
-            if (request.headers["Connection"]?.lowercase() == "close") {
+                // client explicitly asks to close
+                if (request.headers["Connection"]?.lowercase() == "close") {
+                    break
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                outputStream.write(HttpResponse(status = HttpStatus.BAD_REQUEST_400, content = "Bad Request: ${e.message}").toBytes())
+                outputStream.flush()
                 break
             }
         }
