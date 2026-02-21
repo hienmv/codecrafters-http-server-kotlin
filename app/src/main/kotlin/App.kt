@@ -38,11 +38,16 @@ fun main(args: Array<String>) {
 fun handle(client: Socket) {
     val inputStream = client.getInputStream()
     val outputStream = client.getOutputStream()
+    // one reader per connection to no data loss when handling persistent HTTP Connections (keep-alive)
+    // bufferReader will read from the socket input stream in chunks
+    // and keep the remaining data in memory until the next read,
+    // so we won't lose any data when parsing multiple HTTP requests from the same connection
+    val bufferedReader = inputStream.bufferedReader()
     try {
         // keep the loop running as long as the socket is open and not shut down
         // keep persistent HTTP Connections: the same TCP Connection can be reused for multiple requests
         while (!client.isClosed && !client.isInputShutdown) {
-            val request = HttpRequest.parse(inputStream) ?: break
+            val request = HttpRequest.parse(bufferedReader) ?: break
             val response = handleRequest(request)
             outputStream.write(response.toBytes())
             outputStream.flush()
