@@ -1,4 +1,4 @@
-package httpResponse
+package domain.httpResponse
 
 enum class HttpStatus(val code: Int, val message: String) {
     OK_200(code = 200, message = "OK"),

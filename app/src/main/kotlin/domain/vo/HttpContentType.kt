@@ -1,4 +1,4 @@
-package common
+package domain.vo
 
 enum class HttpContentType(val value: String) {
     JSON("application/json"),

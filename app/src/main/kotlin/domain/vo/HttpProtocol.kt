@@ -1,4 +1,4 @@
-package common
+package domain.vo
 
 enum class HttpProtocol(val value: String) {
     HTTP1("HTTP/1.0"),

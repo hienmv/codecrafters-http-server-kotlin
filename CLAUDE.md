@@ -42,8 +42,8 @@ All source is in `app/src/main/kotlin/`. The project uses Java 24 via Gradle too
 - `POST /files/{filename}` → writes request body to file in configured directory
 
 **Package layout:**
-- `httpRequest/` — `HttpRequest`, `HttpMethod`
-- `httpResponse/` — `HttpResponse`, `HttpStatus`
-- `common/` — `Constants`, `HttpContentType`, `HttpProtocol`
+- `domain.httpRequest/` — `HttpRequest`, `HttpMethod`
+- `domain.httpResponse/` — `HttpResponse`, `HttpStatus`
+- `domain.vo/` — `Constants`, `HttpContentType`, `HttpProtocol`
 
 **Global config:** A singleton `Config` object in `App.kt` holds the `--directory` value; it is set once at startup and read-only thereafter.
