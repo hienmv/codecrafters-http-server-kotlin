@@ -21,6 +21,12 @@ repositories {
 }
 
 dependencies {
+    testImplementation(libs.kotest.runner.junit5)
+    testImplementation(libs.kotest.assertions.core)
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
