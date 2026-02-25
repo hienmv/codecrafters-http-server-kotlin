@@ -1,4 +1,4 @@
-package adapters
+package adapter.http.port
 
 import domain.httpResponse.HttpResponse
 

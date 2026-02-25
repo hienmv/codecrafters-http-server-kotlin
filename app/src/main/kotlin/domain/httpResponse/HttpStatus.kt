@@ -5,5 +5,7 @@ enum class HttpStatus(val code: Int, val message: String) {
     CREATED_201(code = 201, message = "Created"),
 
     BAD_REQUEST_400(code = 400, message = "Bad Request"),
-    NOT_FOUND_404(code = 404, message = "Not Found")
+    NOT_FOUND_404(code = 404, message = "Not Found"),
+
+    SERVER_ERROR_500(code = 500, message = "Internal Server Error")
 }

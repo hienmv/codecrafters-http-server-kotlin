@@ -1,6 +1,6 @@
-package infrastructure.fileSystem
+package infrastructure.filesystem
 
-import application.FileRepository
+import application.port.FileRepository
 import java.io.File
 
 class LocalFileRepository(private val directoryPath: String) : FileRepository {

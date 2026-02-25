@@ -1,6 +1,6 @@
 package infrastructure.http
 
-import adapters.ResponseWriter
+import adapter.http.port.ResponseWriter
 import domain.httpResponse.HttpResponse
 import java.net.Socket
 
