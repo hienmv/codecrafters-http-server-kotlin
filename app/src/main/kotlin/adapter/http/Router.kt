@@ -1,14 +1,14 @@
 package adapter.http
 
 import adapter.http.port.HttpResponseEnricher
-import domain.exception.ResourceNotFoundException
 import domain.httpRequest.HttpMethod
 import domain.httpRequest.HttpRequest
 import domain.httpResponse.HttpResponse
+import domain.httpResponse.HttpStatus
 import java.net.URLDecoder
 
 class Router(
-   private val enrichers: List<HttpResponseEnricher> = emptyList()
+    private val enrichers: List<HttpResponseEnricher> = emptyList()
 ) {
     private val routes = mutableListOf<Route>()
     fun get(path: String, handler: (HttpContext) -> HttpResponse): Router {
@@ -25,7 +25,7 @@ class Router(
         val response = resolveRoute(request)?.let { match ->
             val ctx = HttpContext(request, pathParams = match.second)
             match.first.handler(ctx)
-        } ?: throw ResourceNotFoundException(request.target)
+        } ?: HttpResponseFactory.error(HttpStatus.NOT_FOUND_404)
 
         return enrichers.fold(response) { acc, enricher ->
             enricher.enrich(request, acc)

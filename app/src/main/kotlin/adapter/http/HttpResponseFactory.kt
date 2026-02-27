@@ -5,7 +5,7 @@ import domain.httpResponse.HttpStatus
 import domain.vo.HttpContentType
 
 object HttpResponseFactory {
-    fun status(status: HttpStatus): HttpResponse {
+    fun empty(status: HttpStatus): HttpResponse {
         return HttpResponse(
             status = status,
             headers = mapOf(),
