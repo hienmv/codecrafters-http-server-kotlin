@@ -1,0 +1,30 @@
+name: app test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 24
+          cache: gradle
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x ./gradlew
+      - name: Run test with Gradle
+        run: ./gradlew test
+      - name: Upload test results
+        if: always() # Ensure this step runs even if the tests fail
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: /tmp/codecrafters-build-http-server-kotlin/reports/tests/test/

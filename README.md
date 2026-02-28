@@ -161,6 +161,7 @@ app/src/main/kotlin/
 
 ### Testing
 - [x] **Functional test suite** (`test.py`) — covers all routes, keep-alive, wrong/unsupported encodings, `Connection: close`, 20 concurrent requests, mixed route load.
+- [x] **Unit tests (Kotest)** — 72 tests across all layers using `DescribeSpec` + AAA style. No mocking library: outbound ports faked with anonymous objects. Covers `Router` (path matching, param extraction, enrichers), all handlers, use cases, `HttpRequestParser`, `HttpResponseSerializer`, enrichers, error handlers, `LocalFileRepository` (including path traversal), and `HttpProtocol`.
 
 ---
 
@@ -227,7 +228,7 @@ app/src/main/kotlin/
 
 ### Testing
 
-- [ ] **Unit tests** — use cases (`GetFileContent`, `WriteFileContent`) are pure functions with no mocks needed. Handlers testable by constructing `HttpContext` directly.
+- [x] **Unit tests** — use cases (`GetFileContent`, `WriteFileContent`) are pure functions with no mocks needed. Handlers testable by constructing `HttpContext` directly.
 - [ ] **Integration tests** — start the server in a test process, send real HTTP requests via `test.py` or a JVM test client.
 - [ ] **Performance benchmarks** — JMH for `Router.dispatch()` and `HttpResponseSerializer`. Load testing with `wrk` or `hey`.
 - [ ] **Fuzz testing** — send malformed requests to ensure `400 Bad Request` and no crashes.
@@ -235,6 +236,6 @@ app/src/main/kotlin/
 
 ### CI/CD
 
-- [ ] **GitHub Actions** — build, test, benchmark on every push.
+- [x] **GitHub Actions** — unit tests run on every push and PR to `main` via `.github/workflows/test.yml`. Test reports uploaded as artifacts on both pass and fail.
 - [ ] **Docker image** — multi-stage build, minimal JRE base image.
 - [ ] **Deployment** — deploy to a self-hosted VPS. Zero-downtime via `SO_REUSEPORT` + rolling restart.
