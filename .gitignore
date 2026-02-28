@@ -153,6 +153,3 @@ local.properties
 google-services.json
 
 .idea/
-gradle/wrapper/
-gradlew
-gradlew.bat
