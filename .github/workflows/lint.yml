@@ -1,4 +1,4 @@
-name: test
+name: lint
 on:
   push:
     branches:
@@ -7,7 +7,7 @@ on:
     branches:
       - main
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -20,11 +20,5 @@ jobs:
           cache: gradle
       - name: Grant execute permission for Gradle wrapper
         run: chmod +x ./gradlew
-      - name: Run test with Gradle
-        run: ./gradlew test
-      - name: Upload test results
-        if: always() # Ensure this step runs even if the tests fail
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: /tmp/codecrafters-build-http-server-kotlin/reports/tests/test/
+      - name: ktlintCheck
+        run: ./gradlew ktlintCheck
