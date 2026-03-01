@@ -67,6 +67,9 @@ object HttpRequestParser {
                     if (n == -1) break
                     offset += n
                 }
+                if (offset != contentLength) {
+                    throw IllegalArgumentException("Expected Content-Length of $contentLength but only read $offset bytes")
+                }
                 bodyBuffer
             } else {
                 byteArrayOf()

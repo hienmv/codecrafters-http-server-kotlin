@@ -153,5 +153,14 @@ class HttpRequestParserTest :
                     HttpRequestParser.parse(makeStream(raw))
                 }
             }
+
+            it("throws IllegalArgumentException for mismatch between Content-Length and actual body length") {
+                // Arrange
+                val raw = "GET / HTTP/1.1\r\nContent-Length: 4\r\n\r\nABC" // body is 3 bytes, but Content-Length says 4
+                // Act & Assert
+                shouldThrow<IllegalArgumentException> {
+                    HttpRequestParser.parse(makeStream(raw))
+                }
+            }
         }
     })
