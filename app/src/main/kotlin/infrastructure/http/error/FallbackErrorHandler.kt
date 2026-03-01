@@ -5,12 +5,12 @@ import adapter.http.port.HttpErrorHandler
 import domain.httpResponse.HttpResponse
 import domain.httpResponse.HttpStatus
 
-object FallbackErrorHandler: HttpErrorHandler {
+object FallbackErrorHandler : HttpErrorHandler {
     override fun handle(t: Throwable): HttpResponse {
         t.printStackTrace()
         return HttpResponseFactory.error(
             status = HttpStatus.SERVER_ERROR_500,
-            message = "Internal Server Error"
+            message = "Internal Server Error",
         )
     }
 }

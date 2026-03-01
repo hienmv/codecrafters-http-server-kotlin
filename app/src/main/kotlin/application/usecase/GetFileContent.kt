@@ -4,9 +4,7 @@ import application.port.FileRepository
 import domain.exception.ResourceNotFoundException
 
 class GetFileContent(
-    private val fileRepository: FileRepository
+    private val fileRepository: FileRepository,
 ) {
-    fun execute(fileName: String): ByteArray {
-        return fileRepository.read(fileName) ?: throw ResourceNotFoundException(fileName)
-    }
+    fun execute(fileName: String): ByteArray = fileRepository.read(fileName) ?: throw ResourceNotFoundException(fileName)
 }

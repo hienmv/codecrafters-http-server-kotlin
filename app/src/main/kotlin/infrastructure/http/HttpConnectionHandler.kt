@@ -7,7 +7,7 @@ import java.net.Socket
 
 class HttpConnectionHandler(
     private val adapter: HttpAdapter,
-    private val errorHandler: HttpErrorHandler
+    private val errorHandler: HttpErrorHandler,
 ) {
     fun handle(socket: Socket) {
         val stream = BufferedInputStream(socket.getInputStream())

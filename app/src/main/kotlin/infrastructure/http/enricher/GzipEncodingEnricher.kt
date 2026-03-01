@@ -6,7 +6,10 @@ import domain.httpResponse.HttpResponse
 import domain.vo.HttpContentEncoding
 
 object GzipEncodingEnricher : HttpResponseEnricher {
-    override fun enrich(request: HttpRequest, response: HttpResponse): HttpResponse {
+    override fun enrich(
+        request: HttpRequest,
+        response: HttpResponse,
+    ): HttpResponse {
         if (response.body == null) return response
         val acceptEncodings = request.headers["Accept-Encoding"] ?: return response
         val acceptEncodingSet = acceptEncodings.split(",").map { it.trim() }.toSet()

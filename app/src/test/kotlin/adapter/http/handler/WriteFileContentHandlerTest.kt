@@ -12,53 +12,68 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 
-class WriteFileContentHandlerTest : DescribeSpec({
+class WriteFileContentHandlerTest :
+    DescribeSpec({
 
-    fun makeContext(fileName: String, body: ByteArray) = HttpContext(
-        request = HttpRequest(
-            method = HttpMethod.POST,
-            target = "/files/$fileName",
-            protocol = HttpProtocol.HTTP11,
-            body = body,
-        ),
-        pathParams = mapOf("fileName" to fileName),
-    )
+        fun makeContext(
+            fileName: String,
+            body: ByteArray,
+        ) = HttpContext(
+            request =
+                HttpRequest(
+                    method = HttpMethod.POST,
+                    target = "/files/$fileName",
+                    protocol = HttpProtocol.HTTP11,
+                    body = body,
+                ),
+            pathParams = mapOf("fileName" to fileName),
+        )
 
-    describe("WriteFileContentHandler") {
+        describe("WriteFileContentHandler") {
 
-        it("writes request body to repository and returns 201 Created") {
-            // Arrange
-            val bodyBytes = "file content".toByteArray()
-            var writtenFileName = ""
-            var writtenContent = byteArrayOf()
-            val fakeRepo = object : FileRepository {
-                override fun read(fileName: String): ByteArray? = null
-                override fun write(fileName: String, content: ByteArray): Boolean {
-                    writtenFileName = fileName
-                    writtenContent = content
-                    return true
+            it("writes request body to repository and returns 201 Created") {
+                // Arrange
+                val bodyBytes = "file content".toByteArray()
+                var writtenFileName = ""
+                var writtenContent = byteArrayOf()
+                val fakeRepo =
+                    object : FileRepository {
+                        override fun read(fileName: String): ByteArray? = null
+
+                        override fun write(
+                            fileName: String,
+                            content: ByteArray,
+                        ): Boolean {
+                            writtenFileName = fileName
+                            writtenContent = content
+                            return true
+                        }
+                    }
+                val handler = WriteFileContentHandler(WriteFileContent(fakeRepo))
+                // Act
+                val response = handler.create(makeContext("test.txt", bodyBytes))
+                // Assert
+                response.status shouldBe HttpStatus.CREATED_201
+                writtenFileName shouldBe "test.txt"
+                writtenContent.toList() shouldBe bodyBytes.toList()
+            }
+
+            it("propagates WriteFailedException when the repository write fails") {
+                // Arrange
+                val fakeRepo =
+                    object : FileRepository {
+                        override fun read(fileName: String): ByteArray? = null
+
+                        override fun write(
+                            fileName: String,
+                            content: ByteArray,
+                        ): Boolean = false
+                    }
+                val handler = WriteFileContentHandler(WriteFileContent(fakeRepo))
+                // Act & Assert
+                shouldThrow<WriteFailedException> {
+                    handler.create(makeContext("test.txt", byteArrayOf(1, 2, 3)))
                 }
             }
-            val handler = WriteFileContentHandler(WriteFileContent(fakeRepo))
-            // Act
-            val response = handler.create(makeContext("test.txt", bodyBytes))
-            // Assert
-            response.status shouldBe HttpStatus.CREATED_201
-            writtenFileName shouldBe "test.txt"
-            writtenContent.toList() shouldBe bodyBytes.toList()
         }
-
-        it("propagates WriteFailedException when the repository write fails") {
-            // Arrange
-            val fakeRepo = object : FileRepository {
-                override fun read(fileName: String): ByteArray? = null
-                override fun write(fileName: String, content: ByteArray): Boolean = false
-            }
-            val handler = WriteFileContentHandler(WriteFileContent(fakeRepo))
-            // Act & Assert
-            shouldThrow<WriteFailedException> {
-                handler.create(makeContext("test.txt", byteArrayOf(1, 2, 3)))
-            }
-        }
-    }
-})
+    })
