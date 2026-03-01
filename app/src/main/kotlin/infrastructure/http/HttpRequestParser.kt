@@ -33,6 +33,9 @@ object HttpRequestParser {
         // request line
         val requestLine = readLine(stream) ?: return null
         val requestLineParts = requestLine.split(" ", limit = 3)
+        if (requestLineParts.size != 3) {
+            throw IllegalArgumentException("Unexpected HTTP request: $requestLine")
+        }
         val (method, target, protocol) = requestLineParts
 
         // headers
@@ -43,7 +46,9 @@ object HttpRequestParser {
             headerLines.add(line)
         }
         val headers = headerLines.associate { headerLine ->
-            val (key, value) = headerLine.split(":", limit = 2)
+            val parts = headerLine.split(":", limit = 2)
+            if (parts.size != 2) throw IllegalArgumentException("Malformed header line: '$headerLine'")
+            val (key, value) = parts
             key.trim() to value.trim()
         }
 
@@ -60,10 +65,13 @@ object HttpRequestParser {
             bodyBuffer
         } else byteArrayOf()
 
+        val parsedProtocol = HttpProtocol.fromValue(protocol)
+            ?: throw IllegalArgumentException("Unsupported HTTP protocol: $protocol")
+
         return HttpRequest(
             method = HttpMethod.valueOf(method),
             target = target,
-            protocol = HttpProtocol.fromValue(protocol),
+            protocol = parsedProtocol,
             headers = headers,
             body = body
         )

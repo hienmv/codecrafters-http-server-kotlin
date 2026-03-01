@@ -22,11 +22,11 @@ class HttpProtocolTest : DescribeSpec({
             result shouldBe HttpProtocol.HTTP1
         }
 
-        it("throws NoSuchElementException for an unknown protocol string") {
-            // Arrange & Act & Assert
-            shouldThrow<NoSuchElementException> {
-                HttpProtocol.fromValue("HTTP/9.9")
-            }
+        it("return null for an unknown protocol string") {
+            // Arrange & Act
+            val result = HttpProtocol.fromValue("HTTP/9.9")
+            // Assert
+            result shouldBe null
         }
     }
 })

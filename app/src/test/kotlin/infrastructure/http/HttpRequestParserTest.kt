@@ -2,6 +2,7 @@ package infrastructure.http
 
 import domain.httpRequest.HttpMethod
 import domain.vo.HttpProtocol
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -106,6 +107,51 @@ class HttpRequestParserTest : DescribeSpec({
             val request = HttpRequestParser.parse(makeStream(raw))
             // Assert
             request!!.body.size shouldBe 0
+        }
+
+        it("throws IllegalArgumentException for a request line with fewer than 3 parts") {
+            // Arrange
+            val raw = "GET /\r\n\r\n" // missing protocol
+            // Act & Assert
+            shouldThrow<IllegalArgumentException> {
+                HttpRequestParser.parse(makeStream(raw))
+            }
+        }
+
+        it("throws IllegalArgumentException for an empty request line") {
+            // Arrange
+            val raw = "\r\n\r\n"
+            // Act & Assert
+            shouldThrow<IllegalArgumentException> {
+                HttpRequestParser.parse(makeStream(raw))
+            }
+        }
+
+        it("throws IllegalArgumentException for an unknown HTTP method") {
+            // Arrange
+            val raw = "INVALID / HTTP/1.1\r\n\r\n"
+            // Act & Assert
+            shouldThrow<IllegalArgumentException> {
+                HttpRequestParser.parse(makeStream(raw))
+            }
+        }
+
+        it("throws IllegalArgumentException for an unknown HTTP protocol") {
+            // Arrange
+            val raw = "GET / HTTP/9.9\r\n\r\n"
+            // Act & Assert
+            shouldThrow<IllegalArgumentException> {
+                HttpRequestParser.parse(makeStream(raw))
+            }
+        }
+
+        it("throws IllegalArgumentException for a malformed header line with no colon") {
+            // Arrange
+            val raw = "GET / HTTP/1.1\r\nBadHeader\r\n\r\n"
+            // Act & Assert
+            shouldThrow<IllegalArgumentException> {
+                HttpRequestParser.parse(makeStream(raw))
+            }
         }
     }
 })
