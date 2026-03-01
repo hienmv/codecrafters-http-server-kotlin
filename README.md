@@ -138,104 +138,139 @@ app/src/main/kotlin/
 
 ---
 
-## Done
+## Roadmap
 
-### Architecture
+> Sections are ordered by priority. Items within each section are ordered by priority: bugs and security fixes first, then prerequisites before their dependents, then highest-impact / lowest-effort first.
+>
+> TDD workflow: set up the integration test harness (section 2) before starting work on any subsequent section. For each new feature, write the integration test first — red → green → refactor.
+
+### 1. Correctness & Robustness
+
+Fix active bugs before adding anything new.
+
+- [ ] **Malformed request line → 400** *(bug)* — a bad request line causes `ArrayIndexOutOfBoundsException` or `NoSuchElementException`, neither of which is mapped to 400 by `CompositeHttpErrorHandler`. Add explicit validation with `IllegalArgumentException`.
+- [ ] **`IOException` on write** *(bug)* — `SocketResponseWriter.writeResponse()` has no try-catch. A client disconnect mid-response throws into `HttpConnectionHandler`'s catch block and attempts to write a spurious 500 to an already-closed socket.
+- [ ] **`Content-Length` truncation detection** *(bug)* — if the client disconnects before sending all declared bytes, the partial body is silently accepted. Detect `offset < contentLength` after the read loop and respond `400`.
+- [ ] **`data class` + `ByteArray` equality** *(bug)* — `ByteArray` fields in `data class` use reference equality, breaking `equals()`/`hashCode()`. Override both or switch to a regular `class`.
+- [ ] **Response header CRLF injection** — `HttpResponseSerializer` writes `response.headers` without sanitising values. A handler reflecting user input into a response header is exploitable.
+- [ ] **Request header CRLF injection** — validate that header values echoed from user input (e.g. `User-Agent`) do not contain `\r\n` sequences before writing to the response.
+- [ ] **Max request size** — enforce a limit on `Content-Length` to prevent memory exhaustion. Return `413 Payload Too Large`. Depends on expanded `HttpStatus` (section 3).
+- [ ] **Max concurrent connections** — bound the number of accepted connections to prevent thread exhaustion under load or from a slowloris-style attack.
+- [ ] **Graceful server shutdown** — register a `Runtime.getRuntime().addShutdownHook` to stop accepting connections, drain in-flight requests, and close `ServerSocket` cleanly on `SIGTERM`. Prevents file corruption in `WriteFileContent`. Depends on `HttpServer` class (section 5).
+
+### 2. Testing
+
+> **TDD:** set up the JVM integration test harness first — before implementing features in sections 3–7. For each feature, write the integration test (red), implement (green), then refactor. Unit tests (Kotest) are written alongside each implementation.
+
+**Correctness**
+- [x] **Unit tests (Kotest)** — 72 tests, `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
+- [x] **Functional test suite** (`test.py`) — all routes, keep-alive, gzip, `Connection: close`, 20 concurrent requests.
+- [ ] **Integration tests (JVM)** — start server in test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. **Set this up before implementing anything in sections 3–7.** Prerequisite for security tests and fuzz testing.
+- [ ] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement. Write these before implementing the fixes in section 1.
+- [ ] **Fuzz testing** — send randomised malformed requests using `Jazzer` or `AFL++`; verify no 5xx and no crashes. Depends on integration test harness.
+
+**Performance benchmarks** *(run before and after each Performance step to measure the gain)*
+- [ ] **Load testing: `wrk`** — sustained RPS + latency percentiles (p50/p99/p999) against a running server. `wrk -t4 -c400 -d30s http://localhost:4221/`. First tool to reach for; establishes the baseline before each optimisation step.
+- [ ] **Load testing: `hey`** — concurrency sweep (10 → 100 → 1000 connections) to find the throughput cliff. `hey -n 1000000 -c 500 http://localhost:4221/`.
+- [ ] **Profiling: async-profiler** — flame graph of CPU and allocation on the hot path under load. Identifies which allocations to pool (Step 4) and which code path to NIO-ify (Step 3). Run after `wrk` identifies the bottleneck.
+- [ ] **Micro-benchmarks (JMH)** — component-level throughput: `Router.dispatch()`, `HttpRequestParser.parse()`, `HttpResponseSerializer.serialize()`. Isolates hot-path regressions. Run after async-profiler identifies the hot component.
+- [ ] **GC log analysis** — `-Xlog:gc*` to measure pause frequency and duration at each concurrency step. Validates whether ZGC/Shenandoah (Step 5) is necessary. Only relevant above ~500K RPS.
+
+### 3. HTTP/1.1 Protocol
+- [x] **Persistent connections (keep-alive)** — connection loop in `HttpConnectionHandler` reuses TCP connection across multiple requests.
+- [x] **`Connection: close` graceful shutdown** — server detects header, adds `Connection: close` to response via enricher, closes after reply.
+- [x] **`Accept-Encoding: gzip` negotiation** — `GzipEncodingEnricher` checks accepted encodings; `HttpResponseSerializer` compresses body with `GZIPOutputStream`.
+- [x] **Binary-safe bodies** — `HttpRequest.body` and `HttpResponse.body` are `ByteArray` throughout. No UTF-8 corruption of binary files.
+- [x] **Path traversal protection** — `LocalFileRepository` resolves canonical paths and rejects any path escaping the base directory.
+- [ ] **Expand `HttpStatus`** — add `204 No Content`, `206 Partial Content`, `301/302 Redirect`, `304 Not Modified`, `405`, `408`, `413`, `415`, `429`, `501`, `505`. Prerequisite for method/protocol validation, range requests, and max-request-size (section 1).
+- [ ] **Multiple header values** — `HttpRequestParser` uses `associate` which silently drops duplicate header keys. Change to `Map<String, List<String>>` or comma-join per RFC 7230. Affects auth (`Authorization`) and content negotiation.
+- [ ] **Method validation → 405** — unknown `HttpMethod` throws `IllegalArgumentException` mapping to 400. Correct response is `405 Method Not Allowed` with `Allow` header. Depends on expanded `HttpStatus`.
+- [ ] **Protocol validation → 505** — unknown protocol string throws `NoSuchElementException` falling through to 500. Correct response is `505 HTTP Version Not Supported`. Depends on expanded `HttpStatus`.
+- [ ] **HEAD method** — respond with headers only, no body. Simple; required by RFC 7231.
+- [ ] **OPTIONS method** — return `Allow` header listing registered methods for the path. Prerequisite for CORS preflight.
+- [ ] **CORS** — `Access-Control-Allow-*` response headers and preflight handling, configurable origin policy. Depends on OPTIONS.
+- [ ] **`100 Continue`** — respond to `Expect: 100-continue` before reading large request bodies.
+- [ ] **Range requests** — `Range: bytes=0-1023` for partial file downloads (video streaming, resumable downloads). Returns `206 Partial Content`. Depends on expanded `HttpStatus`.
+- [ ] **Conditional requests: ETag** — `ETag` / `If-None-Match` / `If-Match` for hash-based cache validation. Returns `304 Not Modified` or `412 Precondition Failed`. Depends on expanded `HttpStatus`.
+- [ ] **Conditional requests: timestamp** — `Last-Modified` / `If-Modified-Since` / `If-Unmodified-Since` for time-based cache validation.
+- [ ] **HTTP/1.1 pipelining** — handle multiple in-flight requests on the same connection without waiting for each response.
+- [ ] **HTTP/2** — multiplexing, header compression (HPACK), server push. Requires TLS + ALPN.
+
+### 4. Routing
+- [x] **Registration-based router** — `Router.get(path, handler)` / `Router.post(path, handler)` replaces hardcoded `when` block.
+- [x] **Path parameter extraction** — `{param}` in route patterns. `Router.matchPath()` splits by `/`, extracts named segments into `HttpContext`, accessed via `ctx.pathParam("name")`.
+- [ ] **Query string parsing** — `target` is stored raw (e.g. `/path?foo=bar`). Parse into `Map<String, String>` and expose via `ctx.queryParam("name")`. `Router.matchPath()` must strip query string before path matching.
+
+### 5. Architecture
 - [x] **Hexagonal / Clean Architecture** — strict layer separation: domain → application → adapters → infrastructure. Dependencies point inward only.
 - [x] **DDD** — use cases (`GetFileContent`, `WriteFileContent`) in application layer. Handlers are HTTP-specific adapters, not use cases.
 - [x] **`FileRepository` port (DIP)** — application layer defines the interface; infrastructure implements it. No `java.io` in application or domain.
 - [x] **Handlers as API definitions** — live in `adapters/http/handler/`, translate HTTP ↔ use case. Use cases remain HTTP-agnostic.
 - [x] **`HttpContext` stateless builder** — each `result*` method creates a fresh headers map. No shared mutable state between calls. Carries `pathParams`.
 - [x] **`SO_REUSEADDR` before bind** — `ServerSocket()` created unbound, `reuseAddress = true` set, then `bind()` called.
+- [x] **Response enrichers** — `HttpResponseEnricher` port + `GzipEncodingEnricher` + `ConnectionHeaderEnricher`. Applies cross-cutting response headers after handler returns; wired into `Router`.
+- [ ] **`HttpServer` class** — encapsulate TCP lifecycle (`ServerSocket`, bind, accept loop, thread management, `start()` / `stop()`) out of `App.kt` into `infrastructure/http/HttpServer.kt`. Prerequisite for DI lifecycle hooks and graceful shutdown.
+- [ ] **Typed config: `HttpConfig`** — port, socket timeout, max request size, thread pool size. Parsed from CLI args / env vars. Prerequisite for thread pool tuning (section 8, Step 1) and `HttpServer`.
+- [ ] **Typed config: `FileConfig`** — base directory, max file size. Parsed from CLI args / env vars.
+- [ ] **Middleware chain** — `fun interface Middleware { fun handle(request, next): HttpResponse }` — intercepts requests before handler for auth, rate limiting, tracing. `Router.buildChain()` uses `foldRight` to compose the chain. Prerequisite for sections 6 and 7.
+- [ ] **DI container core** — manual `Container.kt` with `singleton {}` / `register {}` blocks and `get<T>()` resolution.
+- [ ] **DI module system** — split wiring into focused modules (`httpModule()`, `fileModule()`, etc.) via `Container.() -> Unit` extension functions. Depends on DI container core.
+- [ ] **Named DI bindings** — support multiple bindings of the same type (e.g., two `ExecutorService` instances for IO vs CPU pools). Depends on DI module system.
+- [ ] **DI lifecycle hooks** — `start()` / `stop()` on managed resources (`ExecutorService`, `ServerSocket`, metrics reporters) for graceful startup and shutdown. Depends on `HttpServer` class + DI module system.
 
-### Routing
-- [x] **Registration-based router** — `Router.get(path, handler)` / `Router.post(path, handler)` replaces hardcoded `when` block.
-- [x] **Path parameter extraction** — `{param}` in route patterns (e.g. `/echo/{text}`, `/files/{fileName}`). `Router.matchPath()` splits pattern and path by `/`, extracts named segments. Injected into `HttpContext`, accessed via `ctx.pathParam("name")`.
+### 6. Security
+- [ ] **Security response headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options`, `Referrer-Policy` as default enrichers. Trivial to add; no dependencies.
+- [ ] **Request timeout** — maximum wall-clock time for a complete request (headers + body) to prevent slowloris. Configurable per route. No external dependencies.
+- [ ] **Rate limiting** — per-IP request limit via `Middleware`. Returns `429 Too Many Requests`. Depends on Middleware chain (section 5).
+- [ ] **Authentication** — `Middleware` returning `401 Unauthorized`. Bearer token extraction and validation. Depends on Middleware chain.
+- [ ] **JWT validation** — signature verification and claims validation (expiry, audience). Separate from Bearer extraction. Depends on Authentication middleware.
+- [ ] **TLS/HTTPS** — `SSLServerSocket`. TLS 1.2+ only. Required for HTTP/2 (ALPN). Most complex; enables the entire HTTP/2 roadmap.
 
-### HTTP/1.1
-- [x] **Persistent connections (keep-alive)** — connection loop in `HttpConnectionHandler` reuses TCP connection across multiple requests.
-- [x] **`Connection: close` graceful shutdown** — server detects header, sends `Connection: close` in response, closes after reply.
-- [x] **`Accept-Encoding: gzip` negotiation** — `HttpContext.build()` checks accepted encodings; `HttpResponseSerializer` compresses body with `GZIPOutputStream`.
-- [x] **Binary-safe bodies** — `HttpRequest.body` and `HttpResponse.body` are `ByteArray` throughout. No UTF-8 corruption of binary files.
-- [x] **Path traversal protection** — `LocalFileRepository` resolves canonical paths and rejects any path escaping the base directory.
+### 7. Observability
+- [ ] **Startup / shutdown log** — log server address and port when ready; log drain status on shutdown. Minimum operator visibility. No dependencies.
+- [ ] **Health check endpoint** — `GET /health` → `200 OK` for load balancer probes. Trivial handler; needed from first production deploy.
+- [ ] **Logging infrastructure** — add `slf4j` + `logback` dependency. Configure structured JSON output and log levels. Prerequisite for per-request access log.
+- [ ] **Request correlation ID** — generate `X-Request-ID` per request; propagate in response headers. Prerequisite for log correlation and distributed tracing.
+- [ ] **Per-request access log** — method, path, status, duration, bytes sent, correlation ID. Implemented as a `Middleware`. Depends on logging infra + correlation ID + Middleware chain.
+- [ ] **Metrics** — request count, error rate, latency percentiles (p50/p99/p999), active connection count. Expose via `GET /metrics` (Prometheus). Implemented as a `Middleware`. Depends on logging infra + Middleware chain.
+- [ ] **Distributed tracing** — propagate `traceparent` (W3C Trace Context), emit spans per request. Implemented as a `Middleware`. Depends on correlation ID + Middleware chain.
 
-### Testing
-- [x] **Functional test suite** (`test.py`) — covers all routes, keep-alive, wrong/unsupported encodings, `Connection: close`, 20 concurrent requests, mixed route load.
-- [x] **Unit tests (Kotest)** — 72 tests across all layers using `DescribeSpec` + AAA style. No mocking library: outbound ports faked with anonymous objects. Covers `Router` (path matching, param extraction, enrichers), all handlers, use cases, `HttpRequestParser`, `HttpResponseSerializer`, enrichers, error handlers, `LocalFileRepository` (including path traversal), and `HttpProtocol`.
+### 8. Performance & Concurrency
 
----
+> Ceiling estimates for a simple plaintext endpoint on dedicated hardware.
+> Evidence: [TechEmpower Round 23](https://www.techempower.com/benchmarks/), [ebarlas/java-httpserver-vthreads](https://github.com/ebarlas/java-httpserver-vthreads), [buffer-pooling case study](https://dev.to/uthman_dev/how-buffer-pooling-doubled-my-http-servers-throughput-4000-7721-rps-3i0g).
+> Measure with `wrk` before and after each step to confirm the gain.
 
-## TODO — Toward a Production-Grade Server
+**Step 1 — ~150K RPS** *(current baseline, platform threads + blocking I/O)*
+- [ ] **Thread pool tuning** — bounded executor with back-pressure instead of `Thread { }.start()`. Prevent unbounded thread creation under load.
+- [ ] **Socket read timeout** — `socket.setSoTimeout(ms)` to evict idle keep-alive connections and free threads.
 
-### Architecture & Extensibility
+**Step 2 — ~400K RPS** *(virtual threads)*
+- [ ] **Virtual threads** — replace `Thread { }.start()` with `Executors.newVirtualThreadPerTaskExecutor()`. Minimal code change; JVM parks blocked threads without consuming an OS thread. Removes the platform-thread ceiling.
 
-- [ ] **Middleware chain** — `fun interface Middleware { fun handle(request, next): HttpResponse }` — intercepts requests before handler for auth, rate limiting, tracing. Supports both global and per-route middleware. `Router.buildChain()` uses `foldRight` to compose the chain.
-- [ ] **Response enrichers** — `fun interface ResponseEnricher { fun enrich(request, response): HttpResponse }` — applies cross-cutting response headers (Content-Encoding, Connection) after handler returns. Moves protocol concerns out of `HttpContext` into `infrastructure/http/enricher/`.
-- [ ] **DI container** — manual `Container.kt` with `singleton {}` and `register {}` blocks. Provider lambdas take `Container` as receiver, enabling `get<T>()` inside providers for chained resolution. Split into focused modules (`httpModule()`, `routerModule()`, etc.) via `Container.() -> Unit` extension functions.
-- [ ] **Named DI bindings** — support multiple bindings of the same type (e.g., two `ExecutorService` instances for IO vs CPU).
-- [ ] **DI lifecycle hooks** — `start()` / `stop()` on managed resources (`ExecutorService`, `ServerSocket`, metrics reporters) for graceful shutdown.
-- [ ] **`AppConfig` / `HttpConfig` / `FileConfig`** — typed config classes per layer. `AppConfig` parsed from CLI args / env vars in `App.kt`. `HttpConfig` owns port, soTimeout, maxRequestSize. `FileConfig` owns directoryPath, maxFileSize. Registered as singletons in the DI container.
-- [ ] **`HttpServer` class** — encapsulate TCP lifecycle (`ServerSocket` creation, bind, accept loop, thread management, `start()` / `stop()`) out of `App.kt` into `infrastructure/http/HttpServer.kt`.
+**Step 3 — ~1.5M RPS** *(NIO event loop)*
+- [ ] **Non-blocking I/O** — migrate `HttpConnectionHandler` to Java NIO (`Selector` / `SocketChannel`) or Kotlin coroutines. Fixed thread pool; no thread blocked per connection. This is the architecture used by Netty, the TechEmpower top Java performer.
+- [ ] **Zero-copy file serving** — `FileChannel.transferTo()` (OS `sendfile`) instead of `file.readBytes()` into heap.
 
-### Performance / Concurrency
+**Step 4 — ~3M RPS** *(buffer and object pooling)*
+- [ ] **Pooled I/O read buffers** — pre-allocate a `ByteArray` pool per thread. Reuse for `HttpRequestParser` instead of `new ByteArrayOutputStream()` per request. At 500K RPS the server discards ~32 MB/s of buffers, driving GC.
+- [ ] **Pooled write buffers** — reuse serialisation buffers in `HttpResponseSerializer` instead of allocating a fresh array per response.
+- [ ] **Pooled domain objects** — `HttpRequest` / `HttpResponse` / header map pooled and reset per request on the hot path. Avoids per-request allocation of short-lived objects.
 
-- [ ] **Virtual threads** — replace `Thread { }.start()` with `Executors.newVirtualThreadPerTaskExecutor()` (Java 21+). Eliminates thread-per-connection overhead, scales to hundreds of thousands of concurrent connections.
-- [ ] **Non-blocking I/O** — migrate `HttpConnectionHandler` to Java NIO (`Selector`, `SocketChannel`) or Kotlin coroutines for async dispatch. Eliminates blocking on slow clients.
-- [ ] **Thread pool tuning** — bounded thread pool with back-pressure for platform thread model. Prevent unbounded thread creation under load.
-- [ ] **Socket read timeout** — `socket.setSoTimeout(ms)` to evict idle connections and free threads.
-- [ ] **File descriptor limits** — `ulimit -n` to increase max open files. Default 1024 limits concurrent connections.
-- [ ] **Zero-copy file serving** — use `FileChannel.transferTo()` (OS-level sendfile) for file responses instead of `readBytes()` into heap.
+**Step 5 — ~5–7M RPS** *(direct memory + GC + OS tuning)*
+- [ ] **Direct memory for I/O** — `ByteBuffer.allocateDirect()` for socket reads/writes. Bytes pass kernel → userspace without touching the GC-managed heap.
+- [ ] **GC: ZGC or Shenandoah** — sub-millisecond pause times. Default G1 pauses of 10–50 ms are fatal at multi-million RPS. Reference: [LinkedIn GC tuning](https://engineering.linkedin.com/garbage-collection/garbage-collection-optimization-high-throughput-and-low-latency-java-applications), [Uber JVM tuning](https://www.uber.com/blog/jvm-tuning-garbage-collection/).
+- [ ] **Socket buffer tuning** — set `TCP_NODELAY` (disable Nagle), `SO_RCVBUF`, `SO_SNDBUF` on both `ServerSocket` and accepted `Socket` to match network throughput.
+- [ ] **GraalVM Native Image** — AOT compilation: eliminates JVM warm-up (~3 ms startup vs ~100 ms JVM), reduces heap footprint, improves peak throughput on short-lived or latency-sensitive workloads.
 
-### Streaming & Large Data
+### 9. Streaming & Large Data
+- [ ] **Streaming response body** — introduce `Body` sealed type (`Body.Bytes` / `Body.Stream`) in domain. `HttpResponseSerializer` writes chunks. Required for files larger than available heap.
+- [ ] **Chunked Transfer-Encoding (response)** — send `Transfer-Encoding: chunked` when `Content-Length` is unknown upfront. Depends on streaming response body.
+- [ ] **Streaming request body** — expose request body as lazy `Sequence<ByteArray>` rather than a fully buffered `ByteArray`. Required for large uploads.
+- [ ] **Server-Sent Events (SSE)** — `Body.ServerSentEvents(events: Flow<String>)`. Serializer holds connection open and flushes events as they arrive.
 
-- [ ] **Streaming response body** — introduce `Body` sealed type (`Body.Bytes` / `Body.Stream`) in domain. `HttpResponseSerializer` iterates chunks, never buffers the full file. Required for files > available heap.
-- [ ] **Chunked Transfer-Encoding** — send `Transfer-Encoding: chunked` when `Content-Length` is unknown upfront.
-- [ ] **Streaming request body** — parse `Content-Length` and expose the request body as a lazy `Sequence<ByteArray>` rather than a fully buffered `ByteArray`. Required for large file uploads.
-- [ ] **Server-Sent Events (SSE)** — add `Body.ServerSentEvents(events: Flow<String>)` to the `Body` sealed type. `HttpResponseSerializer` holds the connection open and flushes events as they arrive.
-
-### HTTP Protocol
-
-- [ ] **HTTP/1.1 pipelining** — handle multiple in-flight requests on the same connection without waiting for each response.
-- [ ] **`100 Continue`** — respond to `Expect: 100-continue` before reading large request bodies.
-- [ ] **Range requests** — `Range: bytes=0-1023` for partial file downloads (video streaming, resumable downloads).
-- [ ] **Conditional requests** — `ETag`, `Last-Modified`, `If-None-Match`, `If-Modified-Since` for proper HTTP caching.
-- [ ] **HEAD method** — respond with headers only, no body.
-- [ ] **OPTIONS method** — CORS preflight support.
-- [ ] **HTTP/2** — multiplexing, header compression (HPACK), server push.
-
-### Correctness & Robustness
-
-- [ ] **`data class` + `ByteArray`** — `HttpRequest.body` and `HttpResponse.body` use `ByteArray` in a `data class`, breaking `equals()`/`hashCode()`. Override both or use a regular `class`.
-- [ ] **`IOException` on write** — `SocketResponseWriter.writeResponse()` has no try-catch. A client disconnect mid-response throws silently into `HttpConnectionHandler`'s catch block and sends a spurious 400 to a closed socket.
-- [ ] **Malformed request handling** — destructuring `requestLineParts` throws `IndexOutOfBoundsException` on malformed request lines. Should produce a proper `400 Bad Request`.
-- [ ] **Header injection** — validate that header values set from user input (e.g., `User-Agent` echo) do not contain `\r\n` sequences.
-- [ ] **Max request size** — enforce a limit on `Content-Length` to prevent memory exhaustion from malicious clients.
-- [ ] **`Content-Length` validation** — if the client sends fewer bytes than declared, detect and reject the partial buffer.
-
-### Observability
-
-- [ ] **Structured logging** — per-request log: method, path, status, duration, bytes sent. Implement as a `Middleware` using `slf4j` + `logback` with JSON output.
-- [ ] **Metrics** — request count, error rate, latency percentiles (p50/p99/p999), active connection count. Expose via `GET /metrics` (Prometheus format). Implement as a `Middleware`.
-- [ ] **Distributed tracing** — propagate `traceparent` (W3C Trace Context) header, emit spans per request. Implement as a `Middleware`.
-- [ ] **Health check endpoint** — `GET /health` returning `200 OK` for load balancer probes. One line in `App.kt`.
-
-### Security
-
-- [ ] **TLS/HTTPS** — wrap `ServerSocket` with `SSLServerSocket`. Support TLS 1.2+ only. Configurable via `HttpConfig`.
-- [ ] **Authentication** — `Middleware` returning `401 Unauthorized` before the handler is reached. Supports Bearer token, API key, or JWT validation.
-- [ ] **Rate limiting** — per-IP request rate limit via `Middleware`. Returns `429 Too Many Requests`.
-- [ ] **Request timeout** — maximum time for a complete request (headers + body) to prevent slowloris attacks. Configurable via `HttpConfig`.
-
-### Testing
-
-- [x] **Unit tests** — use cases (`GetFileContent`, `WriteFileContent`) are pure functions with no mocks needed. Handlers testable by constructing `HttpContext` directly.
-- [ ] **Integration tests** — start the server in a test process, send real HTTP requests via `test.py` or a JVM test client.
-- [ ] **Performance benchmarks** — JMH for `Router.dispatch()` and `HttpResponseSerializer`. Load testing with `wrk` or `hey`.
-- [ ] **Fuzz testing** — send malformed requests to ensure `400 Bad Request` and no crashes.
-- [ ] **Security testing** — path traversal, header injection, slowloris, DoS attack vectors.
-
-### CI/CD
-
-- [x] **GitHub Actions** — unit tests run on every push and PR to `main` via `.github/workflows/test.yml`. Test reports uploaded as artifacts on both pass and fail.
-- [ ] **Docker image** — multi-stage build, minimal JRE base image.
-- [ ] **Deployment** — deploy to a self-hosted VPS. Zero-downtime via `SO_REUSEPORT` + rolling restart.
+### 10. CI/CD
+- [x] **GitHub Actions** — unit tests on every push and PR to `main`. Test reports uploaded as artifacts on pass and fail.
+- [ ] **Docker image** — multi-stage build, minimal JRE base image (e.g. `eclipse-temurin:24-jre-alpine`). Prerequisite for VPS deployment.
+- [ ] **VPS deployment** — systemd unit file, reverse proxy (nginx/caddy), firewall rules, OS tuning (`ulimit -n`, GC flags). Depends on Docker image.
+- [ ] **`SO_REUSEPORT`** — socket option enabling multiple processes to bind the same port for zero-downtime rolling restarts. Depends on VPS deployment + `HttpServer` class.
