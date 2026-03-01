@@ -271,6 +271,7 @@ Fix active bugs before adding anything new.
 
 ### 10. CI/CD
 - [x] **GitHub Actions** — unit tests on every push and PR to `main`. Test reports uploaded as artifacts on pass and fail.
+- [x] **ktlint** — `org.jlleitschuh.gradle.ktlint` plugin enforces Kotlin code style. Runs in CI before tests (`ktlintCheck` → `test`).
 - [ ] **Docker image** — multi-stage build, minimal JRE base image (e.g. `eclipse-temurin:24-jre-alpine`). Prerequisite for VPS deployment.
 - [ ] **VPS deployment** — systemd unit file, reverse proxy (nginx/caddy), firewall rules, OS tuning (`ulimit -n`, GC flags). Depends on Docker image.
 - [ ] **`SO_REUSEPORT`** — socket option enabling multiple processes to bind the same port for zero-downtime rolling restarts. Depends on VPS deployment + `HttpServer` class.

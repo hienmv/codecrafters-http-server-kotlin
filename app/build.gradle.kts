@@ -10,6 +10,7 @@ layout.buildDirectory.set(file("/tmp/codecrafters-build-http-server-kotlin"))
 plugins {
     // Apply the org.jetbrains.kotlin.jvm Plugin to add support for Kotlin.
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.ktlint)
 
     // Apply the application plugin to add support for building a CLI application in Java.
     application

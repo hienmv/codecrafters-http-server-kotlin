@@ -16,8 +16,11 @@ object HttpRequestParser {
             val b = stream.read()
             if (b == -1) {
                 // end of stream: null if nothing was read yet, otherwise return what we have
-                return if (bytes.size() == 0 && prev == -1) null
-                else bytes.toString(Charsets.ISO_8859_1)
+                return if (bytes.size() == 0 && prev == -1) {
+                    null
+                } else {
+                    bytes.toString(Charsets.ISO_8859_1)
+                }
             }
             if (prev == '\r'.code && b == '\n'.code) {
                 // strip the trailing \r and return the line
@@ -41,39 +44,44 @@ object HttpRequestParser {
         // headers
         val headerLines = mutableListOf<String>()
         while (true) {
-            val line = readLine(stream) ?: break  // stream closed mid-headers
-            if (line.isEmpty()) break              // blank line = end of headers
+            val line = readLine(stream) ?: break // stream closed mid-headers
+            if (line.isEmpty()) break // blank line = end of headers
             headerLines.add(line)
         }
-        val headers = headerLines.associate { headerLine ->
-            val parts = headerLine.split(":", limit = 2)
-            if (parts.size != 2) throw IllegalArgumentException("Malformed header line: '$headerLine'")
-            val (key, value) = parts
-            key.trim() to value.trim()
-        }
+        val headers =
+            headerLines.associate { headerLine ->
+                val parts = headerLine.split(":", limit = 2)
+                if (parts.size != 2) throw IllegalArgumentException("Malformed header line: '$headerLine'")
+                val (key, value) = parts
+                key.trim() to value.trim()
+            }
 
         // body — read directly into ByteArray, no charset conversion needed
         val contentLength = headers["Content-Length"]?.toInt() ?: 0
-        val body = if (contentLength > 0) {
-            val bodyBuffer = ByteArray(contentLength)
-            var offset = 0
-            while (offset < contentLength) {
-                val n = stream.read(bodyBuffer, offset, contentLength - offset)
-                if (n == -1) break
-                offset += n
+        val body =
+            if (contentLength > 0) {
+                val bodyBuffer = ByteArray(contentLength)
+                var offset = 0
+                while (offset < contentLength) {
+                    val n = stream.read(bodyBuffer, offset, contentLength - offset)
+                    if (n == -1) break
+                    offset += n
+                }
+                bodyBuffer
+            } else {
+                byteArrayOf()
             }
-            bodyBuffer
-        } else byteArrayOf()
 
-        val parsedProtocol = HttpProtocol.fromValue(protocol)
-            ?: throw IllegalArgumentException("Unsupported HTTP protocol: $protocol")
+        val parsedProtocol =
+            HttpProtocol.fromValue(protocol)
+                ?: throw IllegalArgumentException("Unsupported HTTP protocol: $protocol")
 
         return HttpRequest(
             method = HttpMethod.valueOf(method),
             target = target,
             protocol = parsedProtocol,
             headers = headers,
-            body = body
+            body = body,
         )
     }
 }

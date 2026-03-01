@@ -1,5 +1,8 @@
 package domain.httpRequest
 
 enum class HttpMethod {
-    GET, POST, PUT, DELETE
+    GET,
+    POST,
+    PUT,
+    DELETE,
 }

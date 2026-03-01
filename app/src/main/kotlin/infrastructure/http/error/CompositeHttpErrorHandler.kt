@@ -6,10 +6,9 @@ import kotlin.reflect.KClass
 
 class CompositeHttpErrorHandler(
     private val handlers: List<Pair<KClass<out Throwable>, HttpErrorHandler>>,
-    private val fallbackHandler: HttpErrorHandler
+    private val fallbackHandler: HttpErrorHandler,
 ) : HttpErrorHandler {
-    override fun handle(t: Throwable): HttpResponse {
-        return handlers.firstOrNull { it.first.isInstance(t) }?.second?.handle(t)
+    override fun handle(t: Throwable): HttpResponse =
+        handlers.firstOrNull { it.first.isInstance(t) }?.second?.handle(t)
             ?: fallbackHandler.handle(t)
-    }
 }
