@@ -1,8 +1,10 @@
 package infrastructure.filesystem
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import java.io.IOException
 import java.nio.file.Files
 
 class LocalFileRepositoryTest : DescribeSpec({
@@ -77,6 +79,32 @@ class LocalFileRepositoryTest : DescribeSpec({
                 val result = repo.write("../escape.txt", "data".toByteArray())
                 // Assert
                 result shouldBe false
+            }
+
+            it("rejects a fileName that resolves to the base directory itself and returns false") {
+                // Arrange
+                val repo = LocalFileRepository(tempDir.absolutePath)
+                // Act
+                val result = repo.write("", "data".toByteArray())
+                // Assert
+                result shouldBe false
+            }
+
+            it("propagates IOException when the file cannot be written") {
+                // Note: may not be reliable when running as root (root ignores read-only permissions)
+                // Arrange
+                val readOnlyDir = Files.createTempDirectory("read-only-test").toFile()
+                readOnlyDir.setReadOnly()
+                val repo = LocalFileRepository(readOnlyDir.absolutePath)
+                // Act & Assert
+                try {
+                    shouldThrow<IOException> {
+                        repo.write("file.txt", "data".toByteArray())
+                    }
+                } finally {
+                    readOnlyDir.setWritable(true)
+                    readOnlyDir.deleteRecursively()
+                }
             }
         }
     }
