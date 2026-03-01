@@ -11,13 +11,8 @@ class LocalFileRepository(private val directoryPath: String) : FileRepository {
 
     override fun write(fileName: String, content: ByteArray): Boolean {
         val file = resolve(fileName) ?: return false
-        return try {
-            file.writeBytes(content)
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
+        file.writeBytes(content)
+        return true
     }
 
     private fun resolve(fileName: String): File? {
