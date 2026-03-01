@@ -113,7 +113,7 @@ app/src/main/kotlin/
 │   │   └── FileRepository.kt        outbound port — no java.io
 │   └── usecase/
 │       ├── GetFileContent.kt         (fileName): ByteArray?
-│       └── WriteFileContent.kt       (fileName, content): Boolean
+│       └── WriteFileContent.kt       (fileName, content): Unit
 ├── adapters/
 │   └── http/
 │       ├── handler/                  API definitions — translate HTTP ↔ use case
@@ -149,7 +149,7 @@ app/src/main/kotlin/
 Fix active bugs before adding anything new.
 
 - [x] **Malformed request line → 400** *(bug)* — `HttpRequestParser` now validates request line has 3 parts and header lines contain `:`, throwing `IllegalArgumentException` → 400. Unknown method and unsupported protocol also map to 400.
-- [ ] **`IOException` on write** *(bug)* — `SocketResponseWriter.writeResponse()` has no try-catch. A client disconnect mid-response throws into `HttpConnectionHandler`'s catch block and attempts to write a spurious 500 to an already-closed socket.
+- [x] **`IOException` on write** *(bug)* — `SocketResponseWriter.writeResponse()` now catches `IOException`, logs it, and closes the output stream. Client disconnects no longer propagate to `HttpConnectionHandler`'s catch block.
 - [ ] **`Content-Length` truncation detection** *(bug)* — if the client disconnects before sending all declared bytes, the partial body is silently accepted. Detect `offset < contentLength` after the read loop and respond `400`.
 - [ ] **`data class` + `ByteArray` equality** *(bug)* — `ByteArray` fields in `data class` use reference equality, breaking `equals()`/`hashCode()`. Override both or switch to a regular `class`.
 - [ ] **Response header CRLF injection** — `HttpResponseSerializer` writes `response.headers` without sanitising values. A handler reflecting user input into a response header is exploitable.
@@ -163,7 +163,7 @@ Fix active bugs before adding anything new.
 > **TDD:** set up the JVM integration test harness first — before implementing features in sections 3–7. For each feature, write the integration test (red), implement (green), then refactor. Unit tests (Kotest) are written alongside each implementation.
 
 **Correctness**
-- [x] **Unit tests (Kotest)** — 80 tests, `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
+- [x] **Unit tests (Kotest)** — 84 tests, `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
 - [x] **Functional test suite** (`test.py`) — all routes, keep-alive, gzip, `Connection: close`, 20 concurrent requests.
 - [ ] **Integration tests (JVM)** — start server in test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. **Set this up before implementing anything in sections 3–7.** Prerequisite for security tests and fuzz testing.
 - [ ] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement. Write these before implementing the fixes in section 1.
@@ -271,7 +271,7 @@ Fix active bugs before adding anything new.
 
 ### 10. CI/CD
 - [x] **GitHub Actions** — unit tests on every push and PR to `main`. Test reports uploaded as artifacts on pass and fail.
-- [x] **ktlint** — `org.jlleitschuh.gradle.ktlint` plugin enforces Kotlin code style. Runs in CI before tests (`ktlintCheck` → `test`).
+- [x] **ktlint** — `org.jlleitschuh.gradle.ktlint` plugin enforces Kotlin code style. Runs as a separate parallel workflow (`lint.yml`) alongside the test workflow (`test.yml`).
 - [ ] **Docker image** — multi-stage build, minimal JRE base image (e.g. `eclipse-temurin:24-jre-alpine`). Prerequisite for VPS deployment.
 - [ ] **VPS deployment** — systemd unit file, reverse proxy (nginx/caddy), firewall rules, OS tuning (`ulimit -n`, GC flags). Depends on Docker image.
 - [ ] **`SO_REUSEPORT`** — socket option enabling multiple processes to bind the same port for zero-downtime rolling restarts. Depends on VPS deployment + `HttpServer` class.

@@ -2,6 +2,7 @@ package infrastructure.http
 
 import adapter.http.port.ResponseWriter
 import domain.httpResponse.HttpResponse
+import java.io.IOException
 import java.net.Socket
 
 class SocketResponseWriter(
@@ -10,9 +11,14 @@ class SocketResponseWriter(
     private val outputStream = socket.getOutputStream()
 
     override fun writeResponse(response: HttpResponse) {
-        // TODO: try-catch and handle IOException, e.g. client disconnects before we can write the response
         // TODO: if the response is too big, we should stream the response body instead of loading it all in memory
-        outputStream.write(HttpResponseSerializer.serialize(response))
-        outputStream.flush()
+        try {
+            outputStream.write(HttpResponseSerializer.serialize(response))
+            outputStream.flush()
+        } catch (e: IOException) {
+            // Log the error and close the socket
+            println("Error writing response: ${e.message}")
+            outputStream.close()
+        }
     }
 }
