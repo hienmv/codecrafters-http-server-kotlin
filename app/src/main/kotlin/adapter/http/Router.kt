@@ -60,6 +60,8 @@ class Router(
         for ((patternSegment, pathSegment) in patternSegments.zip(pathSegments)) {
             if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
                 val paramName = patternSegment.substring(1, patternSegment.length - 1)
+                // URL-decode the segment so handlers receive the logical value, not the
+                // percent-encoded form (e.g. "hello%20world" → "hello world").
                 pathParams[paramName] = URLDecoder.decode(pathSegment, Charsets.UTF_8)
             } else if (patternSegment != pathSegment) {
                 return null
