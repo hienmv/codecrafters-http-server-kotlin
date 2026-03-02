@@ -152,8 +152,8 @@ Fix active bugs before adding anything new.
 - [x] **`IOException` on write** *(bug)* — `SocketResponseWriter.writeResponse()` now catches `IOException`, logs it, and closes the output stream. Client disconnects no longer propagate to `HttpConnectionHandler`'s catch block.
 - [x] **`Content-Length` truncation detection** *(bug)* — if the client disconnects before sending all declared bytes, the partial body is silently accepted. Detect `offset < contentLength` after the read loop and respond `400`.
 - [x] **`data class` + `ByteArray` equality** *(bug)* — `ByteArray` fields in `data class` use reference equality, breaking `equals()`/`hashCode()`. Override both or switch to a regular `class`.
-- [ ] **Response header CRLF injection** — `HttpResponseSerializer` writes `response.headers` without sanitising values. A handler reflecting user input into a response header is exploitable.
-- [ ] **Request header CRLF injection** — validate that header values echoed from user input (e.g. `User-Agent`) do not contain `\r\n` sequences before writing to the response.
+- [x] **Response header CRLF injection** — `HttpResponseSerializer` strips `\r` and `\n` from all header keys and values before writing to the wire. Prevents response splitting (RFC 7230).
+- [x] **Request header CRLF injection** — not required: `HttpRequestParser` uses `\r\n` as the line terminator, so parsed header values structurally cannot contain `\r\n`.
 - [ ] **Max request size** — enforce a limit on `Content-Length` to prevent memory exhaustion. Return `413 Payload Too Large`. Depends on expanded `HttpStatus` (section 3).
 - [ ] **Max concurrent connections** — bound the number of accepted connections to prevent thread exhaustion under load or from a slowloris-style attack.
 - [ ] **Graceful server shutdown** — register a `Runtime.getRuntime().addShutdownHook` to stop accepting connections, drain in-flight requests, and close `ServerSocket` cleanly on `SIGTERM`. Prevents file corruption in `WriteFileContent`. Depends on `HttpServer` class (section 5).

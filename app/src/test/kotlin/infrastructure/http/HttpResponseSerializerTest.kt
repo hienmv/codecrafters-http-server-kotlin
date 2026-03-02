@@ -6,6 +6,7 @@ import domain.vo.HttpProtocol
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
 
@@ -82,6 +83,58 @@ class HttpResponseSerializerTest :
                 val bodyBytes = serialized.copyOfRange(headerEnd, serialized.size)
                 // Assert
                 bodyBytes.toList() shouldBe body.toList()
+            }
+
+            it("strips CRLF from header value to prevent response splitting") {
+                // Arrange
+                val response =
+                    HttpResponse(
+                        status = HttpStatus.OK_200,
+                        headers = mapOf("X-Header" to "legitimate\r\nSet-Cookie: injected"),
+                    )
+                // Act
+                val serialized = String(HttpResponseSerializer.serialize(response), Charsets.UTF_8)
+                // Assert
+                serialized shouldContain "X-Header: legitimateSet-Cookie: injected\r\n"
+            }
+
+            it("strips CR alone from header value") {
+                // Arrange
+                val response =
+                    HttpResponse(
+                        status = HttpStatus.OK_200,
+                        headers = mapOf("X-Header" to "value\rwith\rcr"),
+                    )
+                // Act
+                val serialized = String(HttpResponseSerializer.serialize(response), Charsets.UTF_8)
+                // Assert
+                serialized shouldContain "X-Header: valuewithcr\r\n"
+            }
+
+            it("strips LF alone from header value") {
+                // Arrange
+                val response =
+                    HttpResponse(
+                        status = HttpStatus.OK_200,
+                        headers = mapOf("X-Header" to "value\nwith\nlf"),
+                    )
+                // Act
+                val serialized = String(HttpResponseSerializer.serialize(response), Charsets.UTF_8)
+                // Assert
+                serialized shouldContain "X-Header: valuewithlf\r\n"
+            }
+
+            it("strips CRLF from header key") {
+                // Arrange
+                val response =
+                    HttpResponse(
+                        status = HttpStatus.OK_200,
+                        headers = mapOf("X-Head\r\ner" to "value"),
+                    )
+                // Act
+                val serialized = String(HttpResponseSerializer.serialize(response), Charsets.UTF_8)
+                // Assert
+                serialized shouldContain "X-Header: value\r\n"
             }
 
             it("separates headers and body with a blank CRLF line") {
