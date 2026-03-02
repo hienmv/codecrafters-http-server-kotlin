@@ -151,7 +151,7 @@ Fix active bugs before adding anything new.
 - [x] **Malformed request line → 400** *(bug)* — `HttpRequestParser` now validates request line has 3 parts and header lines contain `:`, throwing `IllegalArgumentException` → 400. Unknown method and unsupported protocol also map to 400.
 - [x] **`IOException` on write** *(bug)* — `SocketResponseWriter.writeResponse()` now catches `IOException`, logs it, and closes the output stream. Client disconnects no longer propagate to `HttpConnectionHandler`'s catch block.
 - [x] **`Content-Length` truncation detection** *(bug)* — if the client disconnects before sending all declared bytes, the partial body is silently accepted. Detect `offset < contentLength` after the read loop and respond `400`.
-- [ ] **`data class` + `ByteArray` equality** *(bug)* — `ByteArray` fields in `data class` use reference equality, breaking `equals()`/`hashCode()`. Override both or switch to a regular `class`.
+- [x] **`data class` + `ByteArray` equality** *(bug)* — `ByteArray` fields in `data class` use reference equality, breaking `equals()`/`hashCode()`. Override both or switch to a regular `class`.
 - [ ] **Response header CRLF injection** — `HttpResponseSerializer` writes `response.headers` without sanitising values. A handler reflecting user input into a response header is exploitable.
 - [ ] **Request header CRLF injection** — validate that header values echoed from user input (e.g. `User-Agent`) do not contain `\r\n` sequences before writing to the response.
 - [ ] **Max request size** — enforce a limit on `Content-Length` to prevent memory exhaustion. Return `413 Payload Too Large`. Depends on expanded `HttpStatus` (section 3).
