@@ -1,5 +1,6 @@
 package infrastructure.http
 
+import domain.exception.PayloadTooLargeException
 import domain.httpRequest.HttpMethod
 import domain.httpRequest.HttpRequest
 import domain.vo.HttpProtocol
@@ -7,6 +8,8 @@ import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 
 object HttpRequestParser {
+    private const val MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
+
     // HTTP lines are terminated by \r\n (CRLF)
     // Returns null only if the stream ends before any byte is read (clean client disconnect)
     private fun readLine(stream: BufferedInputStream): String? {
@@ -58,6 +61,12 @@ object HttpRequestParser {
 
         // body — read directly into ByteArray, no charset conversion needed
         val contentLength = headers["Content-Length"]?.toInt() ?: 0
+        if (contentLength < 0) {
+            throw IllegalArgumentException("Invalid Content-Length: $contentLength")
+        }
+        if (contentLength > MAX_REQUEST_BODY_BYTES) {
+            throw PayloadTooLargeException(MAX_REQUEST_BODY_BYTES)
+        }
         val body =
             if (contentLength > 0) {
                 val bodyBuffer = ByteArray(contentLength)

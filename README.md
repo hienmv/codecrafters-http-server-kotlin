@@ -120,11 +120,19 @@ app/src/main/kotlin/
 │       │   ├── RootHandler.kt
 │       │   ├── EchoHandler.kt
 │       │   ├── UserAgentHandler.kt
-│       │   └── FileHandler.kt
+│       │   ├── GetFileContentHandler.kt
+│       │   └── WriteFileContentHandler.kt
+│       ├── port/
+│       │   ├── HttpAdapter.kt            inbound port interface
+│       │   ├── HttpErrorHandler.kt       error handler port
+│       │   ├── HttpRequestContext.kt
+│       │   ├── HttpResponseBuilder.kt
+│       │   ├── HttpResponseEnricher.kt   cross-cutting response enrichment
+│       │   └── ResponseWriter.kt         output port interface
 │       ├── Router.kt                 path param routing, get/post registration
 │       ├── HttpContext.kt            stateless response builder + pathParam()
-│       ├── HttpController.kt         bridges infrastructure → router
-│       └── ResponseWriter.kt         output port interface
+│       ├── HttpRequestAdapter.kt     bridges infrastructure → router
+│       └── HttpResponseFactory.kt    builds HttpResponse from status + body
 ├── infrastructure/
 │   ├── http/
 │   │   ├── HttpConnectionHandler.kt  connection lifecycle, keep-alive
@@ -154,7 +162,7 @@ Fix active bugs before adding anything new.
 - [x] **`data class` + `ByteArray` equality** *(bug)* — `ByteArray` fields in `data class` use reference equality, breaking `equals()`/`hashCode()`. Override both or switch to a regular `class`.
 - [x] **Response header CRLF injection** — `HttpResponseSerializer` strips `\r` and `\n` from all header keys and values before writing to the wire. Prevents response splitting (RFC 7230).
 - [x] **Request header CRLF injection** — not required: `HttpRequestParser` uses `\r\n` as the line terminator, so parsed header values structurally cannot contain `\r\n`.
-- [ ] **Max request size** — enforce a limit on `Content-Length` to prevent memory exhaustion. Return `413 Payload Too Large`. Depends on expanded `HttpStatus` (section 3).
+- [x] **Max request size** — `HttpRequestParser` checks `Content-Length` against `MAX_REQUEST_BODY_BYTES` (10 MB) before allocating the body buffer. Returns `413 Payload Too Large` via `PayloadTooLargeException` → `PayloadTooLargeRequestErrorHandler`. Negative `Content-Length` rejected with `400`.
 - [ ] **Max concurrent connections** — bound the number of accepted connections to prevent thread exhaustion under load or from a slowloris-style attack.
 - [ ] **Graceful server shutdown** — register a `Runtime.getRuntime().addShutdownHook` to stop accepting connections, drain in-flight requests, and close `ServerSocket` cleanly on `SIGTERM`. Prevents file corruption in `WriteFileContent`. Depends on `HttpServer` class (section 5).
 
@@ -163,10 +171,10 @@ Fix active bugs before adding anything new.
 > **TDD:** set up the JVM integration test harness first — before implementing features in sections 3–7. For each feature, write the integration test (red), implement (green), then refactor. Unit tests (Kotest) are written alongside each implementation.
 
 **Correctness**
-- [x] **Unit tests (Kotest)** — 85 tests, `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
+- [x] **Unit tests (Kotest)** — `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
 - [x] **Functional test suite** (`test.py`) — all routes, keep-alive, gzip, `Connection: close`, 20 concurrent requests.
 - [ ] **Integration tests (JVM)** — start server in test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. **Set this up before implementing anything in sections 3–7.** Prerequisite for security tests and fuzz testing.
-- [ ] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement. Write these before implementing the fixes in section 1.
+- [ ] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement.
 - [ ] **Fuzz testing** — send randomised malformed requests using `Jazzer` or `AFL++`; verify no 5xx and no crashes. Depends on integration test harness.
 
 **Performance benchmarks** *(run before and after each Performance step to measure the gain)*
@@ -182,7 +190,7 @@ Fix active bugs before adding anything new.
 - [x] **`Accept-Encoding: gzip` negotiation** — `GzipEncodingEnricher` checks accepted encodings; `HttpResponseSerializer` compresses body with `GZIPOutputStream`.
 - [x] **Binary-safe bodies** — `HttpRequest.body` and `HttpResponse.body` are `ByteArray` throughout. No UTF-8 corruption of binary files.
 - [x] **Path traversal protection** — `LocalFileRepository` resolves canonical paths and rejects any path escaping the base directory.
-- [ ] **Expand `HttpStatus`** — add `204 No Content`, `206 Partial Content`, `301/302 Redirect`, `304 Not Modified`, `405`, `408`, `413`, `415`, `429`, `501`, `505`. Prerequisite for method/protocol validation, range requests, and max-request-size (section 1).
+- [ ] **Expand `HttpStatus`** — add `204 No Content`, `206 Partial Content`, `301/302 Redirect`, `304 Not Modified`, `405`, `408`, `415`, `429`, `501`, `505`. (`413` already added.) Prerequisite for method/protocol validation and range requests.
 - [ ] **Multiple header values** — `HttpRequestParser` uses `associate` which silently drops duplicate header keys. Change to `Map<String, List<String>>` or comma-join per RFC 7230. Affects auth (`Authorization`) and content negotiation.
 - [ ] **Method validation → 405** — unknown `HttpMethod` throws `IllegalArgumentException` mapping to 400. Correct response is `405 Method Not Allowed` with `Allow` header. Depends on expanded `HttpStatus`.
 - [ ] **Protocol validation → 505** — unknown protocol string now maps to 400 (via `IllegalArgumentException`). Correct response is `505 HTTP Version Not Supported`. Depends on expanded `HttpStatus`.
@@ -209,7 +217,7 @@ Fix active bugs before adding anything new.
 - [x] **`HttpContext` stateless builder** — each `result*` method creates a fresh headers map. No shared mutable state between calls. Carries `pathParams`.
 - [x] **`SO_REUSEADDR` before bind** — `ServerSocket()` created unbound, `reuseAddress = true` set, then `bind()` called.
 - [x] **Response enrichers** — `HttpResponseEnricher` port + `GzipEncodingEnricher` + `ConnectionHeaderEnricher`. Applies cross-cutting response headers after handler returns; wired into `Router`.
-- [ ] **`HttpServer` class** — encapsulate TCP lifecycle (`ServerSocket`, bind, accept loop, thread management, `start()` / `stop()`) out of `App.kt` into `infrastructure/http/HttpServer.kt`. Prerequisite for DI lifecycle hooks and graceful shutdown.
+- [ ] **`HttpServer` class** — encapsulate TCP lifecycle (`ServerSocket`, bind, accept loop, thread management, `start()` / `stop()`) out of `App.kt` into `infrastructure/http/HttpServer.kt`. Also owns the correct connection close sequence for error responses: `shutdownOutput()` → drain remaining input → `close()`. Without this, any error response (400, 404, 413, 500) risks a TCP RST arriving at the client before the response — the OS discards the send buffer on `socket.close()` if the client is still sending. Prerequisite for DI lifecycle hooks and graceful shutdown.
 - [ ] **Typed config: `HttpConfig`** — port, socket timeout, max request size, thread pool size. Parsed from CLI args / env vars. Prerequisite for thread pool tuning (section 8, Step 1) and `HttpServer`.
 - [ ] **Typed config: `FileConfig`** — base directory, max file size. Parsed from CLI args / env vars.
 - [ ] **Middleware chain** — `fun interface Middleware { fun handle(request, next): HttpResponse }` — intercepts requests before handler for auth, rate limiting, tracing. `Router.buildChain()` uses `foldRight` to compose the chain. Prerequisite for sections 6 and 7.
