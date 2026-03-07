@@ -11,6 +11,7 @@ import domain.exception.PayloadTooLargeException
 import domain.exception.ResourceNotFoundException
 import infrastructure.filesystem.LocalFileRepository
 import infrastructure.http.HttpConnectionHandler
+import infrastructure.http.HttpConnectionLimitHandler
 import infrastructure.http.enricher.ConnectionHeaderEnricher
 import infrastructure.http.enricher.GzipEncodingEnricher
 import infrastructure.http.error.CompositeHttpErrorHandler
@@ -20,6 +21,10 @@ import infrastructure.http.error.NotFoundErrorHandler
 import infrastructure.http.error.PayloadTooLargeRequestErrorHandler
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
+
+const val MAX_CONCURRENT_CONNECTIONS = 100
 
 fun main(args: Array<String>) {
     val directoryPath = if (args.size > 1 && args[0] == "--directory") args[1] else "."
@@ -54,11 +59,20 @@ fun main(args: Array<String>) {
             adapter = HttpRequestAdapter(router),
             errorHandler = errorHandler,
         )
+
+    val semaphore = Semaphore(MAX_CONCURRENT_CONNECTIONS)
     while (true) { // keep server running
-        val socket = serverSocket.accept()
+        val socket = serverSocket.accept() // wait for a client to connect
+        if (!semaphore.tryAcquire(100, TimeUnit.MILLISECONDS)) {
+            // reject the connection if we are at capacity and cannot acquire a slot within the timeout
+            HttpConnectionLimitHandler.reject(socket)
+            continue
+        }
         Thread {
             // initialize a platform thread
             socket.use { httpConnectionHandler.handle(it) }
+            // release the slot for new connections once the client disconnects and the socket is closed
+            semaphore.release()
         }.start()
     }
 }
