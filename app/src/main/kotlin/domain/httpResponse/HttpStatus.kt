@@ -9,6 +9,7 @@ enum class HttpStatus(
 
     BAD_REQUEST_400(code = 400, message = "Bad Request"),
     NOT_FOUND_404(code = 404, message = "Not Found"),
+    PAYLOAD_TOO_LARGE_413(code = 413, message = "Payload Too Large"),
 
     SERVER_ERROR_500(code = 500, message = "Internal Server Error"),
 }

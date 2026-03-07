@@ -7,6 +7,7 @@ import adapter.http.handler.UserAgentHandler
 import adapter.http.handler.WriteFileContentHandler
 import application.usecase.GetFileContent
 import application.usecase.WriteFileContent
+import domain.exception.PayloadTooLargeException
 import domain.exception.ResourceNotFoundException
 import infrastructure.filesystem.LocalFileRepository
 import infrastructure.http.HttpConnectionHandler
@@ -16,6 +17,7 @@ import infrastructure.http.error.CompositeHttpErrorHandler
 import infrastructure.http.error.FallbackErrorHandler
 import infrastructure.http.error.InvalidRequestErrorHandler
 import infrastructure.http.error.NotFoundErrorHandler
+import infrastructure.http.error.PayloadTooLargeRequestErrorHandler
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 
@@ -43,6 +45,7 @@ fun main(args: Array<String>) {
                 listOf(
                     ResourceNotFoundException::class to NotFoundErrorHandler,
                     IllegalArgumentException::class to InvalidRequestErrorHandler,
+                    PayloadTooLargeException::class to PayloadTooLargeRequestErrorHandler,
                 ),
             fallbackHandler = FallbackErrorHandler,
         )

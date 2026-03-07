@@ -1,5 +1,6 @@
 package infrastructure.http
 
+import domain.exception.PayloadTooLargeException
 import domain.httpRequest.HttpMethod
 import domain.vo.HttpProtocol
 import io.kotest.assertions.throwables.shouldThrow
@@ -150,6 +151,25 @@ class HttpRequestParserTest :
                 val raw = "GET / HTTP/1.1\r\nBadHeader\r\n\r\n"
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
+                    HttpRequestParser.parse(makeStream(raw))
+                }
+            }
+
+            it("throws IllegalArgumentException when Content-Length is negative") {
+                // Arrange
+                val raw = "POST /upload HTTP/1.1\r\nContent-Length: -1\r\n\r\n"
+                // Act & Assert
+                shouldThrow<IllegalArgumentException> {
+                    HttpRequestParser.parse(makeStream(raw))
+                }
+            }
+
+            it("throws PayloadTooLargeException when Content-Length exceeds 10 MB") {
+                // Arrange — declare 11 MB in the header; the check fires before reading any body
+                val overLimit = 11 * 1024 * 1024
+                val raw = "POST /upload HTTP/1.1\r\nContent-Length: $overLimit\r\n\r\n"
+                // Act & Assert
+                shouldThrow<PayloadTooLargeException> {
                     HttpRequestParser.parse(makeStream(raw))
                 }
             }
