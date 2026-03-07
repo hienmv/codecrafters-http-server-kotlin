@@ -56,7 +56,7 @@ Designed with **Hexagonal Architecture** (Ports & Adapters) and **DDD** principl
 ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐
 │   adapters/http/ │  │ infrastructure/  │  │  infrastructure/     │
 │  Router          │  │     http/        │  │    fileSystem/        │
-│  HttpController  │  │                  │  │  LocalFileRepository  │
+│  HttpRequestAdap.│  │                  │  │  LocalFileRepository  │
 │  HttpContext     │  │                  │  │                       │
 │  handler/*       │  │                  │  │                       │
 └────────┬─────────┘  └──────────────────┘  └──────────────────────┘
@@ -88,7 +88,7 @@ Designed with **Hexagonal Architecture** (Ports & Adapters) and **DDD** principl
 
 **`infrastructure/fileSystem/`** — Local disk. Implements `FileRepository`. Owns path traversal protection and `java.io.File`.
 
-**`App.kt`** — Composition root. The only place that knows all layers exist and wires them together.
+**`App.kt`** — Composition root. The only place that knows all layers exist and wires them together. Currently also owns the **single-threaded accept loop**: one thread calls `serverSocket.accept()` in a tight loop; each accepted connection spawns a new platform thread. A `Semaphore` bounds concurrent connections. This moves to `HttpServer` (section 5).
 
 ### Key design decisions
 
@@ -107,7 +107,8 @@ app/src/main/kotlin/
 ├── domain/
 │   ├── httpRequest/        HttpRequest, HttpMethod
 │   ├── httpResponse/       HttpResponse, HttpStatus
-│   └── vo/                 HttpProtocol, HttpContentType, HttpContentEncoding
+│   ├── vo/                 HttpProtocol, HttpContentType, HttpContentEncoding
+│   └── exception/          ResourceNotFoundException, WriteFailedException, PayloadTooLargeException
 ├── application/
 │   ├── port/
 │   │   └── FileRepository.kt        outbound port — no java.io
@@ -135,13 +136,22 @@ app/src/main/kotlin/
 │       └── HttpResponseFactory.kt    builds HttpResponse from status + body
 ├── infrastructure/
 │   ├── http/
+│   │   ├── enricher/
+│   │   │   ├── GzipEncodingEnricher.kt   gzip compression enricher
+│   │   │   └── ConnectionHeaderEnricher.kt
+│   │   ├── error/
+│   │   │   ├── CompositeHttpErrorHandler.kt
+│   │   │   ├── FallbackErrorHandler.kt
+│   │   │   ├── InvalidRequestErrorHandler.kt
+│   │   │   ├── NotFoundErrorHandler.kt
+│   │   │   └── PayloadTooLargeRequestErrorHandler.kt
 │   │   ├── HttpConnectionHandler.kt  connection lifecycle, keep-alive
-│   │   ├── HttpRequestParser.kt      bytes → HttpRequest
-│   │   ├── HttpResponseSerializer.kt HttpResponse → bytes, GZIP
+│   │   ├── HttpRequestParser.kt      bytes → HttpRequest, enforces max body size
+│   │   ├── HttpResponseSerializer.kt HttpResponse → bytes, GZIP, CRLF sanitisation
 │   │   └── SocketResponseWriter.kt   implements ResponseWriter
 │   └── fileSystem/
 │       └── LocalFileRepository.kt    implements FileRepository, path traversal protection
-└── App.kt                            composition root
+└── App.kt                            composition root, single-threaded accept loop (interim)
 ```
 
 ---
@@ -163,8 +173,7 @@ Fix active bugs before adding anything new.
 - [x] **Response header CRLF injection** — `HttpResponseSerializer` strips `\r` and `\n` from all header keys and values before writing to the wire. Prevents response splitting (RFC 7230).
 - [x] **Request header CRLF injection** — not required: `HttpRequestParser` uses `\r\n` as the line terminator, so parsed header values structurally cannot contain `\r\n`.
 - [x] **Max request size** — `HttpRequestParser` checks `Content-Length` against `MAX_REQUEST_BODY_BYTES` (10 MB) before allocating the body buffer. Returns `413 Payload Too Large` via `PayloadTooLargeException` → `PayloadTooLargeRequestErrorHandler`. Negative `Content-Length` rejected with `400`.
-- [ ] **Max concurrent connections** — bound the number of accepted connections to prevent thread exhaustion under load or from a slowloris-style attack.
-- [ ] **Graceful server shutdown** — register a `Runtime.getRuntime().addShutdownHook` to stop accepting connections, drain in-flight requests, and close `ServerSocket` cleanly on `SIGTERM`. Prevents file corruption in `WriteFileContent`. Depends on `HttpServer` class (section 5).
+- [x] **Max concurrent connections** *(interim)* — `Semaphore(MAX_CONCURRENT_CONNECTIONS)` + `tryAcquire(timeout)` in `App.kt`. At capacity, sends `503 Service Unavailable` and closes. Will be superseded by `ThreadPoolExecutor` + `LinkedBlockingQueue` in `HttpServer` (section 5), which adds thread reuse and a non-blocking accept loop.
 
 ### 2. Testing
 
@@ -173,9 +182,9 @@ Fix active bugs before adding anything new.
 **Correctness**
 - [x] **Unit tests (Kotest)** — `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
 - [x] **Functional test suite** (`test.py`) — all routes, keep-alive, gzip, `Connection: close`, 20 concurrent requests.
-- [ ] **Integration tests (JVM)** — start server in test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. **Set this up before implementing anything in sections 3–7.** Prerequisite for security tests and fuzz testing.
+- [ ] **Integration tests (JVM)** — start server in a test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. **Set this up before implementing anything in sections 3–7.** Prerequisite for security tests and fuzz testing.
 - [ ] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement.
-- [ ] **Fuzz testing** — send randomised malformed requests using `Jazzer` or `AFL++`; verify no 5xx and no crashes. Depends on integration test harness.
+- [ ] **Fuzz testing** — send randomized malformed requests using `Jazzer` or `AFL++`; verify no 5xx and no crashes. Depends on integration test harness.
 
 **Performance benchmarks** *(run before and after each Performance step to measure the gain)*
 - [ ] **Load testing: `wrk`** — sustained RPS + latency percentiles (p50/p99/p999) against a running server. `wrk -t4 -c400 -d30s http://localhost:4221/`. First tool to reach for; establishes the baseline before each optimisation step.
@@ -190,7 +199,7 @@ Fix active bugs before adding anything new.
 - [x] **`Accept-Encoding: gzip` negotiation** — `GzipEncodingEnricher` checks accepted encodings; `HttpResponseSerializer` compresses body with `GZIPOutputStream`.
 - [x] **Binary-safe bodies** — `HttpRequest.body` and `HttpResponse.body` are `ByteArray` throughout. No UTF-8 corruption of binary files.
 - [x] **Path traversal protection** — `LocalFileRepository` resolves canonical paths and rejects any path escaping the base directory.
-- [ ] **Expand `HttpStatus`** — add `204 No Content`, `206 Partial Content`, `301/302 Redirect`, `304 Not Modified`, `405`, `408`, `415`, `429`, `501`, `505`. (`413` already added.) Prerequisite for method/protocol validation and range requests.
+- [ ] **Expand `HttpStatus`** — add `100 Continue`, `204 No Content`, `206 Partial Content`, `301/302 Redirect`, `304 Not Modified`, `405`, `408`, `415`, `429`, `501`, `505`. (`413` already added.) Prerequisite for method/protocol validation, `100 Continue` support, and range requests.
 - [ ] **Multiple header values** — `HttpRequestParser` uses `associate` which silently drops duplicate header keys. Change to `Map<String, List<String>>` or comma-join per RFC 7230. Affects auth (`Authorization`) and content negotiation.
 - [ ] **Method validation → 405** — unknown `HttpMethod` throws `IllegalArgumentException` mapping to 400. Correct response is `405 Method Not Allowed` with `Allow` header. Depends on expanded `HttpStatus`.
 - [ ] **Protocol validation → 505** — unknown protocol string now maps to 400 (via `IllegalArgumentException`). Correct response is `505 HTTP Version Not Supported`. Depends on expanded `HttpStatus`.
@@ -217,8 +226,15 @@ Fix active bugs before adding anything new.
 - [x] **`HttpContext` stateless builder** — each `result*` method creates a fresh headers map. No shared mutable state between calls. Carries `pathParams`.
 - [x] **`SO_REUSEADDR` before bind** — `ServerSocket()` created unbound, `reuseAddress = true` set, then `bind()` called.
 - [x] **Response enrichers** — `HttpResponseEnricher` port + `GzipEncodingEnricher` + `ConnectionHeaderEnricher`. Applies cross-cutting response headers after handler returns; wired into `Router`.
-- [ ] **`HttpServer` class** — encapsulate TCP lifecycle (`ServerSocket`, bind, accept loop, thread management, `start()` / `stop()`) out of `App.kt` into `infrastructure/http/HttpServer.kt`. Also owns the correct connection close sequence for error responses: `shutdownOutput()` → drain remaining input → `close()`. Without this, any error response (400, 404, 413, 500) risks a TCP RST arriving at the client before the response — the OS discards the send buffer on `socket.close()` if the client is still sending. Prerequisite for DI lifecycle hooks and graceful shutdown.
-- [ ] **Typed config: `HttpConfig`** — port, socket timeout, max request size, thread pool size. Parsed from CLI args / env vars. Prerequisite for thread pool tuning (section 8, Step 1) and `HttpServer`.
+- [ ] **`HttpServer` class** — move `ServerSocket`, bind, accept loop, and thread management out of `App.kt` into `infrastructure/http/HttpServer.kt` with a clean `start()` / `stop()` API. Foundation for all sub-items below. Prerequisite for DI lifecycle hooks.
+  - [ ] **Bounded thread pool** — replace `Thread { }.start()` with a `ThreadPoolExecutor` (fixed pool size = max concurrent connections). Supersedes the current `Semaphore` approach. Prerequisite for all sub-items below. Feeds into section 8 Step 1 tuning.
+  - [ ] **Bounded accept queue** — use `LinkedBlockingQueue(queueSize)` in `ThreadPoolExecutor`. The accept loop submits connections via `executor.execute {}` and never blocks — if the pool is full the queue absorbs the spike. When the queue is also full, `RejectedExecutionException` is thrown → send `503 Service Unavailable` and close. This solves the core dilemma: grace period for transient spikes *without* blocking the accept loop. Depends on bounded thread pool.
+  - [ ] **Connection tracking** — maintain a count (or set) of active connections. Required to know when all in-flight requests have completed during drain. Depends on bounded thread pool.
+  - [ ] **Accept backlog** — configure `ServerSocket.bind(addr, backlog)` explicitly. Default OS backlog (~50) drops SYN packets under burst traffic; set to 1024+ to absorb spikes without client-visible errors.
+  - [ ] **Idle connection timeout** — call `socket.setSoTimeout(ms)` on each accepted socket. Evicts stale keep-alive connections, freeing threads and file descriptors. Configurable via `HttpConfig`. Feeds into section 8 Step 1.
+  - [ ] **Correct error close sequence** — after writing any error response (400, 404, 413, 500): `socket.shutdownOutput()` → drain remaining input → `socket.close()`. Prevents the OS from issuing a TCP RST that discards the response before the client reads it.
+  - [ ] **Graceful shutdown on `SIGTERM`** — `Runtime.getRuntime().addShutdownHook`: close `ServerSocket` (stop accepting new connections), call `executor.shutdown()` + `awaitTermination()` (drain in-flight requests), then exit. Prevents file corruption mid-write in `WriteFileContent`. Depends on bounded thread pool + connection tracking.
+- [ ] **Typed config: `HttpConfig`** — port, socket timeout, max request size, thread pool size, accept queue depth. Parsed from CLI args / env vars. Configures `HttpServer` (replaces hardcoded constants). Prerequisite for thread pool tuning (section 8, Step 1).
 - [ ] **Typed config: `FileConfig`** — base directory, max file size. Parsed from CLI args / env vars.
 - [ ] **Middleware chain** — `fun interface Middleware { fun handle(request, next): HttpResponse }` — intercepts requests before handler for auth, rate limiting, tracing. `Router.buildChain()` uses `foldRight` to compose the chain. Prerequisite for sections 6 and 7.
 - [ ] **DI container core** — manual `Container.kt` with `singleton {}` / `register {}` blocks and `get<T>()` resolution.
@@ -250,8 +266,8 @@ Fix active bugs before adding anything new.
 > Measure with `wrk` before and after each step to confirm the gain.
 
 **Step 1 — ~150K RPS** *(current baseline, platform threads + blocking I/O)*
-- [ ] **Thread pool tuning** — bounded executor with back-pressure instead of `Thread { }.start()`. Prevent unbounded thread creation under load.
-- [ ] **Socket read timeout** — `socket.setSoTimeout(ms)` to evict idle keep-alive connections and free threads.
+- [ ] **Thread pool tuning** — once `ThreadPoolExecutor` is in place (section 5), tune core/max pool size, queue depth, and keep-alive time based on `wrk` profiling. Depends on `HttpServer` class + `HttpConfig`.
+- [ ] **Socket read timeout** — tune `setSoTimeout(ms)` value (introduced in section 5 `HttpServer`) based on load testing to balance idle connection eviction vs. legitimate slow clients.
 
 **Step 2 — ~400K RPS** *(virtual threads)*
 - [ ] **Virtual threads** — replace `Thread { }.start()` with `Executors.newVirtualThreadPerTaskExecutor()`. Minimal code change; JVM parks blocked threads without consuming an OS thread. Removes the platform-thread ceiling.
