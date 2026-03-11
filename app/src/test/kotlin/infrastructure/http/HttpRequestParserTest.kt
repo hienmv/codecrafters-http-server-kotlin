@@ -23,7 +23,7 @@ class HttpRequestParserTest :
                 // Arrange
                 val raw = "GET / HTTP/1.1\r\n\r\n"
                 // Act
-                val request = HttpRequestParser.parse(makeStream(raw))
+                val request = HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 request!!.method shouldBe HttpMethod.GET
                 request.target shouldBe "/"
@@ -36,7 +36,7 @@ class HttpRequestParserTest :
                 // Arrange
                 val raw = "GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: TestClient\r\n\r\n"
                 // Act
-                val request = HttpRequestParser.parse(makeStream(raw))
+                val request = HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 request!!.headers["Host"] shouldBe "localhost"
                 request.headers["User-Agent"] shouldBe "TestClient"
@@ -47,7 +47,7 @@ class HttpRequestParserTest :
                 val body = "hello"
                 val raw = "POST /submit HTTP/1.1\r\nContent-Length: ${body.length}\r\n\r\n$body"
                 // Act
-                val request = HttpRequestParser.parse(makeStream(raw))
+                val request = HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 String(request!!.body, Charsets.UTF_8) shouldBe body
             }
@@ -56,7 +56,7 @@ class HttpRequestParserTest :
                 // Arrange
                 val stream = BufferedInputStream(ByteArrayInputStream(byteArrayOf()))
                 // Act
-                val result = HttpRequestParser.parse(stream)
+                val result = HttpRequestParser.parse(stream, HttpConfig().maxRequestBodyBytes)
                 // Assert
                 result.shouldBeNull()
             }
@@ -65,7 +65,7 @@ class HttpRequestParserTest :
                 // Arrange
                 val raw = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
                 // Act
-                val request = HttpRequestParser.parse(makeStream(raw))
+                val request = HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 request!!.headers["Host"] shouldBe "localhost"
             }
@@ -74,7 +74,7 @@ class HttpRequestParserTest :
                 // Arrange
                 val raw = "GET / HTTP/1.0\r\n\r\n"
                 // Act
-                val request = HttpRequestParser.parse(makeStream(raw))
+                val request = HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 request!!.protocol shouldBe HttpProtocol.HTTP1
             }
@@ -87,7 +87,7 @@ class HttpRequestParserTest :
                         .toByteArray(Charsets.ISO_8859_1)
                 val fullBytes = header + bodyBytes
                 // Act
-                val request = HttpRequestParser.parse(makeStream(fullBytes))
+                val request = HttpRequestParser.parse(makeStream(fullBytes), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 request!!.body.toList() shouldBe bodyBytes.toList()
             }
@@ -96,7 +96,7 @@ class HttpRequestParserTest :
                 // Arrange
                 val raw = "POST /submit HTTP/1.1\r\nContent-Length: 0\r\n\r\n"
                 // Act
-                val request = HttpRequestParser.parse(makeStream(raw))
+                val request = HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 request!!.body.size shouldBe 0
             }
@@ -105,7 +105,7 @@ class HttpRequestParserTest :
                 // Arrange
                 val raw = "GET /items HTTP/1.1\r\n\r\n"
                 // Act
-                val request = HttpRequestParser.parse(makeStream(raw))
+                val request = HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 // Assert
                 request!!.body.size shouldBe 0
             }
@@ -115,7 +115,7 @@ class HttpRequestParserTest :
                 val raw = "GET /\r\n\r\n" // missing protocol
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
 
@@ -124,7 +124,7 @@ class HttpRequestParserTest :
                 val raw = "\r\n\r\n"
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
 
@@ -133,7 +133,7 @@ class HttpRequestParserTest :
                 val raw = "INVALID / HTTP/1.1\r\n\r\n"
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
 
@@ -142,7 +142,7 @@ class HttpRequestParserTest :
                 val raw = "GET / HTTP/9.9\r\n\r\n"
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
 
@@ -151,7 +151,7 @@ class HttpRequestParserTest :
                 val raw = "GET / HTTP/1.1\r\nBadHeader\r\n\r\n"
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
 
@@ -160,7 +160,7 @@ class HttpRequestParserTest :
                 val raw = "POST /upload HTTP/1.1\r\nContent-Length: -1\r\n\r\n"
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
 
@@ -170,7 +170,7 @@ class HttpRequestParserTest :
                 val raw = "POST /upload HTTP/1.1\r\nContent-Length: $overLimit\r\n\r\n"
                 // Act & Assert
                 shouldThrow<PayloadTooLargeException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
 
@@ -179,7 +179,7 @@ class HttpRequestParserTest :
                 val raw = "GET / HTTP/1.1\r\nContent-Length: 4\r\n\r\nABC" // body is 3 bytes, but Content-Length says 4
                 // Act & Assert
                 shouldThrow<IllegalArgumentException> {
-                    HttpRequestParser.parse(makeStream(raw))
+                    HttpRequestParser.parse(makeStream(raw), HttpConfig().maxRequestBodyBytes)
                 }
             }
         }
