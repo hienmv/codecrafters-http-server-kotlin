@@ -8,8 +8,6 @@ import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 
 object HttpRequestParser {
-    private const val MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
-
     // HTTP lines are terminated by \r\n (CRLF)
     // Returns null only if the stream ends before any byte is read (clean client disconnect)
     private fun readLine(stream: BufferedInputStream): String? {
@@ -35,7 +33,10 @@ object HttpRequestParser {
         }
     }
 
-    fun parse(stream: BufferedInputStream): HttpRequest? {
+    fun parse(
+        stream: BufferedInputStream,
+        maxRequestBodyBytes: Int,
+    ): HttpRequest? {
         // request line
         val requestLine = readLine(stream) ?: return null
         val requestLineParts = requestLine.split(" ", limit = 3)
@@ -43,6 +44,15 @@ object HttpRequestParser {
             throw IllegalArgumentException("Unexpected HTTP request: $requestLine")
         }
         val (method, target, protocol) = requestLineParts
+        val httpMethod =
+            try {
+                HttpMethod.valueOf(method)
+            } catch (e: IllegalArgumentException) {
+                throw IllegalArgumentException("Unsupported HTTP method: $method")
+            }
+        val httpProtocol =
+            HttpProtocol.fromValue(protocol)
+                ?: throw IllegalArgumentException("Unsupported HTTP protocol: $protocol")
 
         // headers
         val headerLines = mutableListOf<String>()
@@ -64,8 +74,8 @@ object HttpRequestParser {
         if (contentLength < 0) {
             throw IllegalArgumentException("Invalid Content-Length: $contentLength")
         }
-        if (contentLength > MAX_REQUEST_BODY_BYTES) {
-            throw PayloadTooLargeException(MAX_REQUEST_BODY_BYTES)
+        if (contentLength > maxRequestBodyBytes) {
+            throw PayloadTooLargeException(maxRequestBodyBytes)
         }
         val body =
             if (contentLength > 0) {
@@ -84,14 +94,10 @@ object HttpRequestParser {
                 byteArrayOf()
             }
 
-        val parsedProtocol =
-            HttpProtocol.fromValue(protocol)
-                ?: throw IllegalArgumentException("Unsupported HTTP protocol: $protocol")
-
         return HttpRequest(
-            method = HttpMethod.valueOf(method),
+            method = httpMethod,
             target = target,
-            protocol = parsedProtocol,
+            protocol = httpProtocol,
             headers = headers,
             body = body,
         )

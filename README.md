@@ -88,7 +88,7 @@ Designed with **Hexagonal Architecture** (Ports & Adapters) and **DDD** principl
 
 **`infrastructure/fileSystem/`** — Local disk. Implements `FileRepository`. Owns path traversal protection and `java.io.File`.
 
-**`App.kt`** — Composition root. The only place that knows all layers exist and wires them together. Currently also owns the **single-threaded accept loop**: one thread calls `serverSocket.accept()` in a tight loop; each accepted connection spawns a new platform thread. A `Semaphore` bounds concurrent connections. This moves to `HttpServer` (section 5).
+**`App.kt`** — Composition root. The only place that knows all layers exist and wires them together. Exposes `buildServer(httpConfig, directoryPath)` — a top-level function shared by `main()` and the integration test harness. `main()` calls `buildServer()`, `server.start()`, then parks the main thread with `Thread.currentThread().join()`.
 
 ### Key design decisions
 
@@ -145,13 +145,15 @@ app/src/main/kotlin/
 │   │   │   ├── InvalidRequestErrorHandler.kt
 │   │   │   ├── NotFoundErrorHandler.kt
 │   │   │   └── PayloadTooLargeRequestErrorHandler.kt
+│   │   ├── HttpConfig.kt             port, maxConcurrentConnections, maxRequestBodyBytes
 │   │   ├── HttpConnectionHandler.kt  connection lifecycle, keep-alive
 │   │   ├── HttpRequestParser.kt      bytes → HttpRequest, enforces max body size
 │   │   ├── HttpResponseSerializer.kt HttpResponse → bytes, GZIP, CRLF sanitisation
+│   │   ├── HttpServer.kt             ServerSocket, accept loop, daemon threads, start/stop
 │   │   └── SocketResponseWriter.kt   implements ResponseWriter
 │   └── fileSystem/
 │       └── LocalFileRepository.kt    implements FileRepository, path traversal protection
-└── App.kt                            composition root, single-threaded accept loop (interim)
+└── App.kt                            composition root, exposes buildServer()
 ```
 
 ---
@@ -182,7 +184,7 @@ Fix active bugs before adding anything new.
 **Correctness**
 - [x] **Unit tests (Kotest)** — `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
 - [x] **Functional test suite** (`test.py`) — all routes, keep-alive, gzip, `Connection: close`, 20 concurrent requests.
-- [ ] **Integration tests (JVM)** — start server in a test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. **Set this up before implementing anything in sections 3–7.** Prerequisite for security tests and fuzz testing.
+- [x] **Integration tests (JVM)** — start server in a test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. `TestServerFactory` uses `buildServer(httpConfig = HttpConfig(port = 0))` so the OS assigns a free port; `server.port` exposes it after `start()`.
 - [ ] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement.
 - [ ] **Fuzz testing** — send randomized malformed requests using `Jazzer` or `AFL++`; verify no 5xx and no crashes. Depends on integration test harness.
 
@@ -226,7 +228,7 @@ Fix active bugs before adding anything new.
 - [x] **`HttpContext` stateless builder** — each `result*` method creates a fresh headers map. No shared mutable state between calls. Carries `pathParams`.
 - [x] **`SO_REUSEADDR` before bind** — `ServerSocket()` created unbound, `reuseAddress = true` set, then `bind()` called.
 - [x] **Response enrichers** — `HttpResponseEnricher` port + `GzipEncodingEnricher` + `ConnectionHeaderEnricher`. Applies cross-cutting response headers after handler returns; wired into `Router`.
-- [ ] **`HttpServer` class** — move `ServerSocket`, bind, accept loop, and thread management out of `App.kt` into `infrastructure/http/HttpServer.kt` with a clean `start()` / `stop()` API. Foundation for all sub-items below. Prerequisite for DI lifecycle hooks.
+- [x] **`HttpServer` class** — `ServerSocket`, bind, accept loop, and thread management live in `infrastructure/http/HttpServer.kt`. Clean `start()` / `stop()` API; `start()` spawns a daemon accept thread and returns immediately. `App.kt` is now a pure composition root exposing `buildServer()`. Foundation for all sub-items below. Prerequisite for DI lifecycle hooks.
   - [ ] **Bounded thread pool** — replace `Thread { }.start()` with a `ThreadPoolExecutor` (fixed pool size = max concurrent connections). Supersedes the current `Semaphore` approach. Prerequisite for all sub-items below. Feeds into section 8 Step 1 tuning.
   - [ ] **Bounded accept queue** — use `LinkedBlockingQueue(queueSize)` in `ThreadPoolExecutor`. The accept loop submits connections via `executor.execute {}` and never blocks — if the pool is full the queue absorbs the spike. When the queue is also full, `RejectedExecutionException` is thrown → send `503 Service Unavailable` and close. This solves the core dilemma: grace period for transient spikes *without* blocking the accept loop. Depends on bounded thread pool.
   - [ ] **Connection tracking** — maintain a count (or set) of active connections. Required to know when all in-flight requests have completed during drain. Depends on bounded thread pool.
@@ -234,7 +236,7 @@ Fix active bugs before adding anything new.
   - [ ] **Idle connection timeout** — call `socket.setSoTimeout(ms)` on each accepted socket. Evicts stale keep-alive connections, freeing threads and file descriptors. Configurable via `HttpConfig`. Feeds into section 8 Step 1.
   - [ ] **Correct error close sequence** — after writing any error response (400, 404, 413, 500): `socket.shutdownOutput()` → drain remaining input → `socket.close()`. Prevents the OS from issuing a TCP RST that discards the response before the client reads it.
   - [ ] **Graceful shutdown on `SIGTERM`** — `Runtime.getRuntime().addShutdownHook`: close `ServerSocket` (stop accepting new connections), call `executor.shutdown()` + `awaitTermination()` (drain in-flight requests), then exit. Prevents file corruption mid-write in `WriteFileContent`. Depends on bounded thread pool + connection tracking.
-- [ ] **Typed config: `HttpConfig`** — port, socket timeout, max request size, thread pool size, accept queue depth. Parsed from CLI args / env vars. Configures `HttpServer` (replaces hardcoded constants). Prerequisite for thread pool tuning (section 8, Step 1).
+- [x] **Typed config: `HttpConfig`** — `data class HttpConfig(port, maxConcurrentConnections, maxRequestBodyBytes)` replaces all hardcoded constants. Passed into `buildServer()` / `HttpServer`. CLI args / env var parsing and remaining fields (socket timeout, accept queue depth) are pending.
 - [ ] **Typed config: `FileConfig`** — base directory, max file size. Parsed from CLI args / env vars.
 - [ ] **Middleware chain** — `fun interface Middleware { fun handle(request, next): HttpResponse }` — intercepts requests before handler for auth, rate limiting, tracing. `Router.buildChain()` uses `foldRight` to compose the chain. Prerequisite for sections 6 and 7.
 - [ ] **DI container core** — manual `Container.kt` with `singleton {}` / `register {}` blocks and `get<T>()` resolution.
