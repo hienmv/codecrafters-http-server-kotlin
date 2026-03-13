@@ -22,6 +22,19 @@ import infrastructure.http.error.PayloadTooLargeRequestErrorHandler
 
 fun main(args: Array<String>) {
     val directoryPath = if (args.size > 1 && args[0] == "--directory") args[1] else "."
+    val server = buildServer(directoryPath = directoryPath)
+
+    // spawns daemon thread, returns immediately
+    server.start()
+    // keep the main thread alive to prevent the application from exiting
+    // the main thread parks here forever while the server is running
+    Thread.currentThread().join()
+}
+
+fun buildServer(
+    httpConfig: HttpConfig = HttpConfig(),
+    directoryPath: String = ".",
+): HttpServer {
     val localFileRepository = LocalFileRepository(directoryPath)
     val getFileContentHandler = GetFileContentHandler(GetFileContent(localFileRepository))
     val writeFileContentHandler = WriteFileContentHandler(WriteFileContent(localFileRepository))
@@ -33,24 +46,18 @@ fun main(args: Array<String>) {
             .get("/files/{fileName}", getFileContentHandler::get)
             .post("/files/{fileName}", writeFileContentHandler::create)
 
-    val server =
-        HttpServer(
-            config = HttpConfig(),
-            adapter = HttpRequestAdapter(router),
-            errorHandler =
-                CompositeHttpErrorHandler(
-                    handlers =
-                        listOf(
-                            ResourceNotFoundException::class to NotFoundErrorHandler,
-                            IllegalArgumentException::class to InvalidRequestErrorHandler,
-                            PayloadTooLargeException::class to PayloadTooLargeRequestErrorHandler,
-                        ),
-                    fallbackHandler = FallbackErrorHandler,
-                ),
-        )
-    // spawns daemon thread, returns immediately
-    server.start()
-    // keep the main thread alive to prevent the application from exiting
-    // the main thread parks here forever while the server is running
-    Thread.currentThread().join()
+    return HttpServer(
+        config = httpConfig,
+        adapter = HttpRequestAdapter(router),
+        errorHandler =
+            CompositeHttpErrorHandler(
+                handlers =
+                    listOf(
+                        ResourceNotFoundException::class to NotFoundErrorHandler,
+                        IllegalArgumentException::class to InvalidRequestErrorHandler,
+                        PayloadTooLargeException::class to PayloadTooLargeRequestErrorHandler,
+                    ),
+                fallbackHandler = FallbackErrorHandler,
+            ),
+    )
 }

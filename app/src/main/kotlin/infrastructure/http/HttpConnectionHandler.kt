@@ -25,7 +25,6 @@ class HttpConnectionHandler(
                 }
             }
         } catch (t: Throwable) {
-            t.printStackTrace()
             socketResponseWriter.writeResponse(errorHandler.handle(t))
         }
     }
