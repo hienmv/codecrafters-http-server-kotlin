@@ -39,6 +39,9 @@ python3 app/src/main/test.py
 - Binary-safe request/response bodies (`ByteArray`, not `String`)
 - Path traversal protection on file endpoints
 - Path parameter extraction (`{param}` in route patterns)
+- Request body size limit (10 MB default, `413 Payload Too Large`)
+- Read timeout / slowloris protection (30s default)
+- CRLF injection prevention in response headers
 
 ---
 
@@ -108,7 +111,7 @@ app/src/main/kotlin/
 │   ├── httpRequest/        HttpRequest, HttpMethod
 │   ├── httpResponse/       HttpResponse, HttpStatus
 │   ├── vo/                 HttpProtocol, HttpContentType, HttpContentEncoding
-│   └── exception/          ResourceNotFoundException, WriteFailedException, PayloadTooLargeException
+│   └── exception/          ResourceNotFoundException, PayloadTooLargeException
 ├── application/
 │   ├── port/
 │   │   └── FileRepository.kt        outbound port — no java.io
@@ -145,7 +148,7 @@ app/src/main/kotlin/
 │   │   │   ├── InvalidRequestErrorHandler.kt
 │   │   │   ├── NotFoundErrorHandler.kt
 │   │   │   └── PayloadTooLargeRequestErrorHandler.kt
-│   │   ├── HttpConfig.kt             port, maxConcurrentConnections, maxRequestBodyBytes
+│   │   ├── HttpConfig.kt             port, maxConcurrentConnections, maxRequestBodyBytes, readTimeoutMs
 │   │   ├── HttpConnectionHandler.kt  connection lifecycle, keep-alive
 │   │   ├── HttpRequestParser.kt      bytes → HttpRequest, enforces max body size
 │   │   ├── HttpResponseSerializer.kt HttpResponse → bytes, GZIP, CRLF sanitisation
@@ -185,7 +188,7 @@ Fix active bugs before adding anything new.
 - [x] **Unit tests (Kotest)** — `DescribeSpec` + AAA style, all layers. No mock library: ports faked with anonymous objects.
 - [x] **Functional test suite** (`test.py`) — all routes, keep-alive, gzip, `Connection: close`, 20 concurrent requests.
 - [x] **Integration tests (JVM)** — start server in a test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. `TestServerFactory` uses `buildServer(httpConfig = HttpConfig(port = 0))` so the OS assigns a free port; `server.port` exposes it after `start()`.
-- [ ] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement.
+- [x] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement.
 - [ ] **Fuzz testing** — send randomized malformed requests using `Jazzer` or `AFL++`; verify no 5xx and no crashes. Depends on integration test harness.
 
 **Performance benchmarks** *(run before and after each Performance step to measure the gain)*
@@ -233,10 +236,10 @@ Fix active bugs before adding anything new.
   - [ ] **Bounded accept queue** — use `LinkedBlockingQueue(queueSize)` in `ThreadPoolExecutor`. The accept loop submits connections via `executor.execute {}` and never blocks — if the pool is full the queue absorbs the spike. When the queue is also full, `RejectedExecutionException` is thrown → send `503 Service Unavailable` and close. This solves the core dilemma: grace period for transient spikes *without* blocking the accept loop. Depends on bounded thread pool.
   - [ ] **Connection tracking** — maintain a count (or set) of active connections. Required to know when all in-flight requests have completed during drain. Depends on bounded thread pool.
   - [ ] **Accept backlog** — configure `ServerSocket.bind(addr, backlog)` explicitly. Default OS backlog (~50) drops SYN packets under burst traffic; set to 1024+ to absorb spikes without client-visible errors.
-  - [ ] **Idle connection timeout** — call `socket.setSoTimeout(ms)` on each accepted socket. Evicts stale keep-alive connections, freeing threads and file descriptors. Configurable via `HttpConfig`. Feeds into section 8 Step 1.
+  - [x] **Idle connection timeout** — `socket.soTimeout = config.readTimeoutMs` on each accepted socket (set inside the worker thread). Evicts stale keep-alive connections, freeing threads and file descriptors. `SocketTimeoutException` caught silently in `HttpConnectionHandler`. Configurable via `HttpConfig.readTimeoutMs` (default 30s). Feeds into section 8 Step 1.
   - [ ] **Correct error close sequence** — after writing any error response (400, 404, 413, 500): `socket.shutdownOutput()` → drain remaining input → `socket.close()`. Prevents the OS from issuing a TCP RST that discards the response before the client reads it.
   - [ ] **Graceful shutdown on `SIGTERM`** — `Runtime.getRuntime().addShutdownHook`: close `ServerSocket` (stop accepting new connections), call `executor.shutdown()` + `awaitTermination()` (drain in-flight requests), then exit. Prevents file corruption mid-write in `WriteFileContent`. Depends on bounded thread pool + connection tracking.
-- [x] **Typed config: `HttpConfig`** — `data class HttpConfig(port, maxConcurrentConnections, maxRequestBodyBytes)` replaces all hardcoded constants. Passed into `buildServer()` / `HttpServer`. CLI args / env var parsing and remaining fields (socket timeout, accept queue depth) are pending.
+- [x] **Typed config: `HttpConfig`** — `data class HttpConfig(port, maxConcurrentConnections, maxRequestBodyBytes, readTimeoutMs)` replaces all hardcoded constants. Passed into `buildServer()` / `HttpServer`. CLI args / env var parsing and remaining fields (accept queue depth) are pending.
 - [ ] **Typed config: `FileConfig`** — base directory, max file size. Parsed from CLI args / env vars.
 - [ ] **Middleware chain** — `fun interface Middleware { fun handle(request, next): HttpResponse }` — intercepts requests before handler for auth, rate limiting, tracing. `Router.buildChain()` uses `foldRight` to compose the chain. Prerequisite for sections 6 and 7.
 - [ ] **DI container core** — manual `Container.kt` with `singleton {}` / `register {}` blocks and `get<T>()` resolution.
@@ -246,7 +249,7 @@ Fix active bugs before adding anything new.
 
 ### 6. Security
 - [ ] **Security response headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options`, `Referrer-Policy` as default enrichers. Trivial to add; no dependencies.
-- [ ] **Request timeout** — maximum wall-clock time for a complete request (headers + body) to prevent slowloris. Configurable per route. No external dependencies.
+- [x] **Request timeout** — `socket.soTimeout` prevents slowloris by closing connections that stall during header/body reads. Configurable via `HttpConfig.readTimeoutMs` (default 30s). Per-route timeout not yet implemented.
 - [ ] **Rate limiting** — per-IP request limit via `Middleware`. Returns `429 Too Many Requests`. Depends on Middleware chain (section 5).
 - [ ] **Authentication** — `Middleware` returning `401 Unauthorized`. Bearer token extraction and validation. Depends on Middleware chain.
 - [ ] **JWT validation** — signature verification and claims validation (expiry, audience). Separate from Bearer extraction. Depends on Authentication middleware.

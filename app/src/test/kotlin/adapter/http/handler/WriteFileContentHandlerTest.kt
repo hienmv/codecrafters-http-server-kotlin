@@ -3,7 +3,7 @@ package adapter.http.handler
 import adapter.http.HttpContext
 import application.port.FileRepository
 import application.usecase.WriteFileContent
-import domain.exception.WriteFailedException
+import domain.exception.ResourceNotFoundException
 import domain.httpRequest.HttpMethod
 import domain.httpRequest.HttpRequest
 import domain.httpResponse.HttpStatus
@@ -58,7 +58,7 @@ class WriteFileContentHandlerTest :
                 writtenContent.toList() shouldBe bodyBytes.toList()
             }
 
-            it("propagates WriteFailedException when the repository write fails") {
+            it("propagates ResourceNotFoundException when the repository write fails") {
                 // Arrange
                 val fakeRepo =
                     object : FileRepository {
@@ -71,7 +71,7 @@ class WriteFileContentHandlerTest :
                     }
                 val handler = WriteFileContentHandler(WriteFileContent(fakeRepo))
                 // Act & Assert
-                shouldThrow<WriteFailedException> {
+                shouldThrow<ResourceNotFoundException> {
                     handler.create(makeContext("test.txt", byteArrayOf(1, 2, 3)))
                 }
             }

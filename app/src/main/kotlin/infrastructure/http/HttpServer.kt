@@ -52,6 +52,11 @@ class HttpServer(
                     continue
                 }
                 Thread {
+                    if (config.readTimeoutMs != 0) {
+                        //  a read() call on the InputStream associated with this Socket will block for only this amount of time.
+                        //  If the timeout expires, a java.net.SocketTimeoutException is raised, though the Socket is still valid.
+                        socket.soTimeout = config.readTimeoutMs
+                    }
                     // initialize a platform thread
                     socket.use { connectionHandler.handle(it) }
                     // release the slot for new connections once the client disconnects and the socket is closed
