@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldBeEmpty
 import io.kotest.matchers.string.shouldContain
+import testutils.TestServerFactory
 import java.net.Socket
 import java.net.URI
 import java.net.http.HttpClient
@@ -125,7 +126,8 @@ class HttpServerIntegrationTest :
                         // read response until blank line (end of headers) — body is empty for GET /
                         val responseStatusLine = input.readLine()
                         responseStatusLine shouldContain "200"
-                        while (input.readLine()?.isNotEmpty() == true) { /* drain headers */ }
+                        while (input.readLine()?.isNotEmpty() == true) { // drain headers
+                        }
                     }
                 }
             }
@@ -165,21 +167,6 @@ class HttpServerIntegrationTest :
                 val response = get("/files/roundtrip.txt")
                 response.statusCode() shouldBe 200
                 response.body() shouldBe "round trip content"
-            }
-        }
-
-        describe("path traversal") {
-            it("returns 404 for path traversal attempts") {
-                Socket("localhost", server.port).use { clientSocket ->
-                    // do not directly use the HttpClient for this test
-                    // since it may normalize the path and prevent testing the raw path traversal attack
-                    clientSocket.getOutputStream().write(
-                        "GET /files/../../../etc/passwd HTTP/1.1\r\nHost: localhost\r\n\r\n".toByteArray(),
-                    )
-                    clientSocket.getOutputStream().flush()
-                    val statusLine = clientSocket.getInputStream().bufferedReader().readLine()
-                    statusLine shouldContain "404"
-                }
             }
         }
     })

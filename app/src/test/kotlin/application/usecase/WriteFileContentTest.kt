@@ -1,7 +1,7 @@
 package application.usecase
 
 import application.port.FileRepository
-import domain.exception.WriteFailedException
+import domain.exception.ResourceNotFoundException
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 
@@ -26,7 +26,7 @@ class WriteFileContentTest :
                 useCase.execute("file.txt", byteArrayOf(1, 2, 3))
             }
 
-            it("throws WriteFailedException when the repository write fails") {
+            it("throws ResourceNotFoundException when the repository write fails") {
                 // Arrange
                 val repo =
                     object : FileRepository {
@@ -39,7 +39,7 @@ class WriteFileContentTest :
                     }
                 val useCase = WriteFileContent(repo)
                 // Act & Assert
-                shouldThrow<WriteFailedException> {
+                shouldThrow<ResourceNotFoundException> {
                     useCase.execute("file.txt", byteArrayOf(1, 2, 3))
                 }
             }

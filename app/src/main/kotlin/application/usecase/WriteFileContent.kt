@@ -1,7 +1,7 @@
 package application.usecase
 
 import application.port.FileRepository
-import domain.exception.WriteFailedException
+import domain.exception.ResourceNotFoundException
 
 class WriteFileContent(
     private val fileRepository: FileRepository,
@@ -11,7 +11,7 @@ class WriteFileContent(
         content: ByteArray,
     ) {
         if (!fileRepository.write(fileName, content)) {
-            throw WriteFailedException(fileName)
+            throw ResourceNotFoundException(fileName)
         }
     }
 }
