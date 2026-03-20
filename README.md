@@ -18,6 +18,9 @@ Listens on port `4221`.
 ```sh
 # run functional tests (requires: pip install requests)
 python3 app/src/main/test.py
+
+# run fuzz tests (Jazzer, 60s per test)
+./gradlew test --tests "fuzz.*"
 ```
 
 ---
@@ -189,7 +192,7 @@ Fix active bugs before adding anything new.
 - [x] **Functional test suite** (`test.py`) — all routes, keep-alive, gzip, `Connection: close`, 20 concurrent requests.
 - [x] **Integration tests (JVM)** — start server in a test process on a random port, send real HTTP requests via `java.net.http.HttpClient`. Covers full request-response cycle end-to-end. `TestServerFactory` uses `buildServer(httpConfig = HttpConfig(port = 0))` so the OS assigns a free port; `server.port` exposes it after `start()`.
 - [x] **Security tests** — path traversal, CRLF injection, slowloris, max-size enforcement.
-- [ ] **Fuzz testing** — send randomized malformed requests using `Jazzer` or `AFL++`; verify no 5xx and no crashes. Depends on integration test harness.
+- [x] **Fuzz testing** — Jazzer-based fuzz tests (`@FuzzTest`) for `HttpRequestParser`, `HttpResponseSerializer`, and live `HttpServer`. Verifies no crashes on malformed input, no 5xx on garbage requests, and no CRLF injection in serialized responses.
 
 **Performance benchmarks** *(run before and after each Performance step to measure the gain)*
 - [ ] **Load testing: `wrk`** — sustained RPS + latency percentiles (p50/p99/p999) against a running server. `wrk -t4 -c400 -d30s http://localhost:4221/`. First tool to reach for; establishes the baseline before each optimisation step.
