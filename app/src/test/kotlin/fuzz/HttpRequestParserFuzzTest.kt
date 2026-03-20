@@ -7,7 +7,6 @@ import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 
 class HttpRequestParserFuzzTest {
-
     @FuzzTest(maxDuration = "60s")
     fun fuzzParse(data: ByteArray) {
         val stream = BufferedInputStream(ByteArrayInputStream(data))

@@ -6,7 +6,6 @@ import domain.httpResponse.HttpStatus
 import infrastructure.http.HttpResponseSerializer
 
 class HttpResponseSerializerFuzzTest {
-
     @FuzzTest(maxDuration = "60s")
     fun fuzzSerializeWithRandomHeaders(data: ByteArray) {
         // Split the fuzz input into two parts to generate header key and value
@@ -15,11 +14,12 @@ class HttpResponseSerializerFuzzTest {
         val headerKey = String(data.sliceArray(1..maxOf(1, splitPoint)), Charsets.ISO_8859_1)
         val headerValue = String(data.sliceArray(minOf(splitPoint + 1, data.size - 1) until data.size), Charsets.ISO_8859_1)
 
-        val response = HttpResponse(
-            status = HttpStatus.OK_200,
-            headers = mapOf(headerKey to headerValue),
-            body = "test".toByteArray(),
-        )
+        val response =
+            HttpResponse(
+                status = HttpStatus.OK_200,
+                headers = mapOf(headerKey to headerValue),
+                body = "test".toByteArray(),
+            )
         val serialized = String(HttpResponseSerializer.serialize(response), Charsets.UTF_8)
 
         // The serialized output must never contain an un-sanitised CRLF inside a header line.

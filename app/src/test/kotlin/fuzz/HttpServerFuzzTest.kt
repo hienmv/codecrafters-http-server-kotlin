@@ -6,7 +6,6 @@ import java.net.Socket
 import java.net.SocketException
 
 class HttpServerFuzzTest {
-
     companion object {
         private val server = TestServerFactory.create().also { it.start() }
     }
@@ -33,7 +32,7 @@ class HttpServerFuzzTest {
                             if (statusCode != null && statusCode in 500..599) {
                                 throw AssertionError(
                                     "Server returned $statusCode for fuzzed input. " +
-                                        "Input (${data.size} bytes): ${data.take(100).toList()}"
+                                        "Input (${data.size} bytes): ${data.take(100).toList()}",
                                 )
                             }
                         }
