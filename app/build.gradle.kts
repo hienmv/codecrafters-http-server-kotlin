@@ -5,8 +5,6 @@
  * For more details on building Java & JVM projects, please refer to https://docs.gradle.org/9.1.0/userguide/building_java_projects.html in the Gradle documentation.
  */
 
-layout.buildDirectory.set(file("/tmp/codecrafters-build-http-server-kotlin"))
-
 plugins {
     // Apply the org.jetbrains.kotlin.jvm Plugin to add support for Kotlin.
     alias(libs.plugins.kotlin.jvm)

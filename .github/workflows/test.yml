@@ -27,4 +27,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          path: /tmp/codecrafters-build-http-server-kotlin/reports/tests/test/
+          path: app/build/reports/tests/test/
