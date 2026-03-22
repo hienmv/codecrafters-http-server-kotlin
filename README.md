@@ -2,22 +2,29 @@
 
 [![progress-banner](https://backend.codecrafters.io/progress/http-server/0ebddf4f-0b34-4aca-85f1-4f8e1d9c1f38)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
-Started as a solution to the [CodeCrafters "Build Your Own HTTP Server" challenge](https://app.codecrafters.io/courses/http-server/overview), then evolved into a study of **Hexagonal Architecture** and **DDD** applied to a from-scratch HTTP/1.1 server — with the goal of building toward a server capable of handling **hundreds of thousands of requests per second**.
+A from-scratch HTTP/1.1 server — started from [CodeCrafters](https://app.codecrafters.io/courses/http-server/overview), evolved into a high-performance design study.
 
 ---
 
 ## Running
 
 ```sh
-./your_program.sh                              # default directory: .
-./your_program.sh --directory /path/to/files  # serve files from a custom directory
+# build once (re-run after code changes)
+./gradlew installDist
+
+# run the server
+./run.sh                              # default directory: .
+./run.sh --directory /path/to/files   # serve files from a custom directory
 ```
 
 Listens on port `4221`.
 
 ```sh
 # run functional tests (requires: pip install requests)
-python3 app/src/main/test.py
+python3 scripts/test.py
+
+# run load tests (requires: brew install wrk)
+./scripts/load-test.sh
 
 # run fuzz tests (Jazzer, 60s per test)
 ./gradlew test --tests "fuzz.*"
@@ -195,7 +202,7 @@ Fix active bugs before adding anything new.
 - [x] **Fuzz testing** — Jazzer-based fuzz tests (`@FuzzTest`) for `HttpRequestParser`, `HttpResponseSerializer`, and live `HttpServer`. Verifies no crashes on malformed input, no 5xx on garbage requests, and no CRLF injection in serialized responses.
 
 **Performance benchmarks** *(run before and after each Performance step to measure the gain)*
-- [ ] **Load testing: `wrk`** — sustained RPS + latency percentiles (p50/p99/p999) against a running server. `wrk -t4 -c400 -d30s http://localhost:4221/`. First tool to reach for; establishes the baseline before each optimisation step.
+- [x] **Load testing: `wrk`** — sustained RPS + latency percentiles (p50/p99/p999) against a running server. `scripts/load-test.sh` wraps `wrk -t4 -c400 -d30s` against `/`, `/echo/hello`, and `/user-agent`. First tool to reach for; establishes the baseline before each optimisation step.
 - [ ] **Load testing: `hey`** — concurrency sweep (10 → 100 → 1000 connections) to find the throughput cliff. `hey -n 1000000 -c 500 http://localhost:4221/`.
 - [ ] **Profiling: async-profiler** — flame graph of CPU and allocation on the hot path under load. Identifies which allocations to pool (Step 4) and which code path to NIO-ify (Step 3). Run after `wrk` identifies the bottleneck.
 - [ ] **Micro-benchmarks (JMH)** — component-level throughput: `Router.dispatch()`, `HttpRequestParser.parse()`, `HttpResponseSerializer.serialize()`. Isolates hot-path regressions. Run after async-profiler identifies the hot component.

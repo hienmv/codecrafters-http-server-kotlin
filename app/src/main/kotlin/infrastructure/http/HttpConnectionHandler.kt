@@ -4,6 +4,7 @@ import adapter.http.port.HttpAdapter
 import adapter.http.port.HttpErrorHandler
 import java.io.BufferedInputStream
 import java.net.Socket
+import java.net.SocketException
 import java.net.SocketTimeoutException
 
 class HttpConnectionHandler(
@@ -27,6 +28,8 @@ class HttpConnectionHandler(
             }
         } catch (_: SocketTimeoutException) {
             // Slow client — timed out waiting for data; silently close the connection.
+        } catch (_: SocketException) {
+            // Client disconnected (connection reset); silently close.
         } catch (t: Throwable) {
             socketResponseWriter.writeResponse(errorHandler.handle(t))
         }
