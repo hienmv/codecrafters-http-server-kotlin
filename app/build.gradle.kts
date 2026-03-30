@@ -9,6 +9,7 @@ plugins {
     // Apply the org.jetbrains.kotlin.jvm Plugin to add support for Kotlin.
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.jmh)
 
     // Apply the application plugin to add support for building a CLI application in Java.
     application
@@ -40,4 +41,12 @@ java {
 application {
     // Define the main class for the application.
     mainClass.set("AppKt")
+}
+
+jmh {
+    warmupIterations.set(2)
+    iterations.set(3)
+    fork.set(1)
+    benchmarkMode.set(listOf("thrpt", "avgt"))
+    timeUnit.set("us")
 }

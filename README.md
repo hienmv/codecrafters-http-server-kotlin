@@ -34,6 +34,9 @@ python3 scripts/test.py
 PROFILE_EVENT=alloc ./scripts/async-profiler.sh    # allocation
 PROFILE_EVENT=wall  ./scripts/async-profiler.sh    # wall-clock
 
+# run JMH micro-benchmarks (Router, Parser, Serializer)
+./gradlew jmh
+
 # run fuzz tests (Jazzer, 60s per test)
 ./gradlew test --tests "fuzz.*"
 ```
@@ -213,7 +216,7 @@ Fix active bugs before adding anything new.
 - [x] **Load testing: `wrk`** — sustained RPS + latency percentiles (p50/p99/p999) against a running server. `scripts/load-test-wrk.sh` wraps `wrk -t4 -c400 -d30s` against `/`, `/echo/hello`, and `/user-agent`. First tool to reach for; establishes the baseline before each optimisation step.
 - [x] **Load testing: `hey`** — concurrency sweep (10 → 100 → 1000 connections) to find the throughput cliff. `scripts/load-test-hey.sh` runs `hey -n 100000` at each concurrency level against `/`, `/echo/hello`, and `/user-agent`, then prints a summary table.
 - [x] **Profiling: async-profiler** — flame graph of CPU and allocation on the hot path under load. Identifies which allocations to pool (Step 4) and which code path to NIO-ify (Step 3). `scripts/async-profiler.sh` wraps `asprof start/stop` around a `wrk` load run, producing an HTML flame graph in `build/profile-results/`. Configurable via `PROFILE_EVENT` (`cpu`, `alloc`, `wall`).
-- [ ] **Micro-benchmarks (JMH)** — component-level throughput: `Router.dispatch()`, `HttpRequestParser.parse()`, `HttpResponseSerializer.serialize()`. Isolates hot-path regressions. Run after async-profiler identifies the hot component.
+- [x] **Micro-benchmarks (JMH)** — component-level throughput: `Router.dispatch()`, `HttpRequestParser.parse()`, `HttpResponseSerializer.serialize()`. Isolates hot-path regressions. Run after async-profiler identifies the hot component.
 - [ ] **GC log analysis** — `-Xlog:gc*` to measure pause frequency and duration at each concurrency step. Validates whether ZGC/Shenandoah (Step 5) is necessary. Only relevant above ~500K RPS.
 
 ### 3. HTTP/1.1 Protocol
